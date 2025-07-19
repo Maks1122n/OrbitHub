@@ -5,6 +5,7 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Login } from './pages/Login';
+import { AdsPowerTest } from './pages/AdsPowerTest';
 
 // Временная главная страница
 const Dashboard = () => (
@@ -15,6 +16,42 @@ const Dashboard = () => (
           OrbitHub Dashboard
         </h1>
         <p className="text-gray-400 text-lg">Welcome to your Instagram automation hub!</p>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="mb-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <a 
+          href="/adspower-test" 
+          className="bg-gradient-to-r from-blue-600 to-purple-600 p-6 rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all"
+        >
+          <div className="flex items-center mb-4">
+            <svg className="h-8 w-8 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            <h3 className="text-xl font-semibold">Test AdsPower</h3>
+          </div>
+          <p className="text-gray-200">Test and verify AdsPower API integration</p>
+        </a>
+        
+        <div className="bg-gray-800 p-6 rounded-lg border border-gray-700 opacity-50">
+          <div className="flex items-center mb-4">
+            <svg className="h-8 w-8 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+            <h3 className="text-xl font-semibold">Manage Accounts</h3>
+          </div>
+          <p className="text-gray-400">Coming soon...</p>
+        </div>
+        
+        <div className="bg-gray-800 p-6 rounded-lg border border-gray-700 opacity-50">
+          <div className="flex items-center mb-4">
+            <svg className="h-8 w-8 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <h3 className="text-xl font-semibold">Schedule Posts</h3>
+          </div>
+          <p className="text-gray-400">Coming soon...</p>
+        </div>
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -46,7 +83,7 @@ const Dashboard = () => (
           </div>
           <div className="flex items-center justify-between">
             <span>AdsPower Integration</span>
-            <span className="text-yellow-400">⚠ Pending Setup</span>
+            <span className="text-blue-400">🔧 Ready for Testing</span>
           </div>
           <div className="flex items-center justify-between">
             <span>Dropbox Sync</span>
@@ -84,6 +121,14 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <Dashboard />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/adspower-test" 
+                element={
+                  <ProtectedRoute>
+                    <AdsPowerTest />
                   </ProtectedRoute>
                 } 
               />

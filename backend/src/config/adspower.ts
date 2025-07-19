@@ -1,55 +1,46 @@
 import { config } from './env';
+import axios from 'axios';
 
 export const adsPowerConfig = {
-  baseUrl: config.adspower.host,
-  apiKey: config.adspower.apiKey,
+  // Local API адрес AdsPower
+  host: config.adspower.host || 'http://local.adspower.net:50325',
   
-  // Настройки по умолчанию для профилей браузера
-  defaultProfile: {
-    fingerprint_config: {
-      automatic_timezone: 1,
-      language: ['en-US', 'en'],
-      page_action: 1,
-      screen_resolution: '1920,1080',
-      fonts: [],
-    },
-    user_proxy_config: {
-      proxy_soft: 'other',
-      proxy_type: 'http',
-      proxy_host: '',
-      proxy_port: '',
-      proxy_user: '',
-      proxy_password: '',
-    },
+  // Таймауты
+  timeout: 30000, // 30 секунд
+  
+  // Настройки по умолчанию для профилей
+  defaultProfileConfig: {
+    domain_name: 'instagram.com',
+    open_tabs: ['https://www.instagram.com'],
     repeat_config: [
       {
         site_url: 'https://www.instagram.com',
         repeat_times: 1
       }
     ],
-  },
-  
-  // Таймауты и лимиты
-  timeouts: {
-    browserStart: 30000, // 30 секунд
-    pageLoad: 60000, // 60 секунд
-    elementWait: 10000, // 10 секунд
-  },
-  
-  // Настройки для автоматизации
-  automation: {
-    humanDelay: {
-      min: 100,
-      max: 300,
+    fingerprint_config: {
+      automatic_timezone: 1,
+      language: ['en-US', 'en'],
+      page_action: 1,
+      screen_resolution: '1920,1080',
+      fonts: 'default'
     },
-    scrollDelay: {
-      min: 500,
-      max: 1500,
-    },
-    typeDelay: {
-      min: 50,
-      max: 150,
-    },
+    user_proxy_config: {
+      proxy_soft: 'other',
+      proxy_type: 'http'
+    }
+  }
+};
+
+// Проверка доступности AdsPower
+export const checkAdsPowerConnection = async (): Promise<boolean> => {
+  try {
+    const response = await axios.get(`${adsPowerConfig.host}/api/v1/status`, {
+      timeout: 5000
+    });
+    return response.status === 200;
+  } catch (error) {
+    return false;
   }
 };
 
