@@ -1,182 +1,128 @@
-import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
-import { User, AuthTokens, AuthState } from '../types/auth';
-import { api } from '../services/api';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { authApi, User } from '../services/authApi';
 import toast from 'react-hot-toast';
 
-interface AuthContextType extends AuthState {
+interface AuthContextType {
+  user: User | null;
+  isLoading: boolean;
+  isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
-  refreshToken: () => Promise<boolean>;
+  updateUser: (userData: Partial<User>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-type AuthAction =
-  | { type: 'LOGIN_START' }
-  | { type: 'LOGIN_SUCCESS'; payload: { user: User; tokens: AuthTokens } }
-  | { type: 'LOGIN_FAILURE' }
-  | { type: 'LOGOUT' }
-  | { type: 'SET_LOADING'; payload: boolean };
+interface AuthProviderProps {
+  children: ReactNode;
+}
 
-const authReducer = (state: AuthState, action: AuthAction): AuthState => {
-  switch (action.type) {
-    case 'LOGIN_START':
-      return { ...state, isLoading: true };
-    case 'LOGIN_SUCCESS':
-      return {
-        ...state,
-        user: action.payload.user,
-        tokens: action.payload.tokens,
-        isAuthenticated: true,
-        isLoading: false
-      };
-    case 'LOGIN_FAILURE':
-      return {
-        ...state,
-        user: null,
-        tokens: null,
-        isAuthenticated: false,
-        isLoading: false
-      };
-    case 'LOGOUT':
-      return {
-        ...state,
-        user: null,
-        tokens: null,
-        isAuthenticated: false,
-        isLoading: false
-      };
-    case 'SET_LOADING':
-      return { ...state, isLoading: action.payload };
-    default:
-      return state;
-  }
-};
+export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-const initialState: AuthState = {
-  user: null,
-  tokens: null,
-  isAuthenticated: false,
-  isLoading: true
-};
+  const isAuthenticated = !!user;
 
-export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [state, dispatch] = useReducer(authReducer, initialState);
-
-  // Проверка токена при загрузке
+  // Инициализация при загрузке приложения
   useEffect(() => {
-    const initAuth = async () => {
-      const storedTokens = localStorage.getItem('tokens');
-      if (storedTokens) {
-        try {
-          const tokens = JSON.parse(storedTokens);
-          api.defaults.headers.Authorization = `Bearer ${tokens.accessToken}`;
-          
-          // Проверяем токен запросом профиля
-          const response = await api.get('/auth/profile');
-          if (response.data.success) {
-            dispatch({
-              type: 'LOGIN_SUCCESS',
-              payload: {
-                user: response.data.data.user,
-                tokens
-              }
-            });
-          } else {
-            localStorage.removeItem('tokens');
-            dispatch({ type: 'LOGIN_FAILURE' });
-          }
-        } catch (error) {
-          localStorage.removeItem('tokens');
-          dispatch({ type: 'LOGIN_FAILURE' });
-        }
-      } else {
-        dispatch({ type: 'SET_LOADING', payload: false });
-      }
-    };
-
-    initAuth();
+    initializeAuth();
   }, []);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
-    dispatch({ type: 'LOGIN_START' });
-    
+  const initializeAuth = async () => {
     try {
-      const response = await api.post('/auth/login', { email, password });
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        setIsLoading(false);
+        return;
+      }
+
+      // Проверяем валидность токена
+      const response = await authApi.getProfile();
+      if (response.data.success) {
+        setUser(response.data.data.user);
+      } else {
+        // Токен невалидный, удаляем его
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('user');
+      }
+    } catch (error) {
+      console.error('Auth initialization error:', error);
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('user');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const login = async (email: string, password: string): Promise<boolean> => {
+    try {
+      const response = await authApi.login({ email, password });
       
       if (response.data.success) {
-        const { user, tokens } = response.data.data;
+        const { user: userData, token } = response.data.data;
         
-        // Сохраняем токены
-        localStorage.setItem('tokens', JSON.stringify(tokens));
-        api.defaults.headers.Authorization = `Bearer ${tokens.accessToken}`;
+        // Сохраняем токен и пользователя
+        localStorage.setItem('authToken', token);
+        localStorage.setItem('user', JSON.stringify(userData));
         
-        dispatch({
-          type: 'LOGIN_SUCCESS',
-          payload: { user, tokens }
-        });
+        setUser(userData);
         
-        toast.success('Successfully logged in!');
+        toast.success(`Welcome back, ${userData.name}!`);
         return true;
       } else {
-        dispatch({ type: 'LOGIN_FAILURE' });
-        toast.error(response.data.error || 'Login failed');
+        toast.error('Invalid credentials');
         return false;
       }
     } catch (error: any) {
-      dispatch({ type: 'LOGIN_FAILURE' });
-      toast.error(error.response?.data?.error || 'Login failed');
+      console.error('Login error:', error);
+      const message = error.response?.data?.error || 'Login failed. Please try again.';
+      toast.error(message);
       return false;
     }
   };
 
   const logout = () => {
-    localStorage.removeItem('tokens');
-    delete api.defaults.headers.Authorization;
-    dispatch({ type: 'LOGOUT' });
-    toast.success('Logged out successfully');
-  };
-
-  const refreshToken = async (): Promise<boolean> => {
     try {
-      const storedTokens = localStorage.getItem('tokens');
-      if (!storedTokens) return false;
-
-      const tokens = JSON.parse(storedTokens);
-      const response = await api.post('/auth/refresh-token', {
-        refreshToken: tokens.refreshToken
-      });
-
-      if (response.data.success) {
-        const newTokens = response.data.data.tokens;
-        localStorage.setItem('tokens', JSON.stringify(newTokens));
-        api.defaults.headers.Authorization = `Bearer ${newTokens.accessToken}`;
-        return true;
-      }
-      return false;
+      // Отправляем запрос на сервер для logout (опционально)
+      authApi.logout().catch(console.error);
     } catch (error) {
-      logout();
-      return false;
+      console.error('Logout error:', error);
+    } finally {
+      // Очищаем локальные данные
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('user');
+      setUser(null);
+      
+      toast.success('Logged out successfully');
+      
+      // Перенаправляем на страницу логина
+      window.location.href = '/login';
     }
   };
 
-  return (
-    <AuthContext.Provider
-      value={{
-        ...state,
-        login,
-        logout,
-        refreshToken
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
+  const updateUser = (userData: Partial<User>) => {
+    if (user) {
+      const updatedUser = { ...user, ...userData };
+      setUser(updatedUser);
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+    }
+  };
+
+  const value: AuthContextType = {
+    user,
+    isLoading,
+    isAuthenticated,
+    login,
+    logout,
+    updateUser,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
-  if (!context) {
+  if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
