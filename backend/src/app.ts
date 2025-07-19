@@ -28,6 +28,7 @@ import authRoutes from './routes/auth';
 import adsPowerRoutes from './routes/adspower';
 import accountRoutes from './routes/accounts';
 import dropboxRoutes from './routes/dropbox';
+import instagramRoutes from './routes/instagram';
 
 // Импорты сервисов
 import { AutomationService } from './services/AutomationService';
@@ -154,6 +155,9 @@ class App {
     
     // Dropbox маршруты
     this.app.use('/api/dropbox', dropboxRoutes);
+    
+    // Instagram маршруты
+    this.app.use('/api/instagram', instagramRoutes);
     
     // API маршруты
     this.app.use('/api', apiRoutes);
