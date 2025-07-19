@@ -9,6 +9,7 @@ import { Server } from 'socket.io';
 import { config } from './config/env';
 import { connectDatabase } from './config/database';
 import logger from './utils/logger';
+import { createDefaultAdmin } from './utils/createAdmin';
 
 // Импорты middleware
 import { 
@@ -22,6 +23,7 @@ import { logUserActivity } from './middleware/auth';
 
 // Импорты маршрутов
 import apiRoutes from './routes';
+import authRoutes from './routes/auth';
 
 // Импорты сервисов
 import { AutomationService } from './services/AutomationService';
@@ -91,6 +93,9 @@ class App {
   }
 
   private initializeRoutes(): void {
+    // Auth маршруты
+    this.app.use('/api/auth', authRoutes);
+    
     // API маршруты
     this.app.use('/api', apiRoutes);
 
@@ -161,6 +166,9 @@ class App {
     try {
       // Подключаемся к базе данных
       await connectDatabase();
+
+      // Создаем админа по умолчанию
+      await createDefaultAdmin();
 
       // Создаем необходимые директории
       await this.createDirectories();

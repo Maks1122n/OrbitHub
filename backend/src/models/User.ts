@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 
 export interface IUser extends Document {
   _id: string;
-  username: string;
+  name: string;
   email: string;
   password: string;
   role: 'admin' | 'user';
@@ -17,13 +17,12 @@ export interface IUser extends Document {
 }
 
 const userSchema = new Schema<IUser>({
-  username: {
+  name: {
     type: String,
     required: true,
-    unique: true,
     trim: true,
-    minlength: 3,
-    maxlength: 30
+    minlength: 2,
+    maxlength: 50
   },
   email: {
     type: String,
@@ -41,7 +40,7 @@ const userSchema = new Schema<IUser>({
   role: {
     type: String,
     enum: ['admin', 'user'],
-    default: 'user'
+    default: 'admin'
   },
   isActive: {
     type: Boolean,
@@ -72,8 +71,14 @@ userSchema.methods.comparePassword = async function(candidatePassword: string): 
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
+// Удаляем пароль из JSON ответа
+userSchema.methods.toJSON = function() {
+  const user = this.toObject();
+  delete user.password;
+  return user;
+};
+
 // Индексы для оптимизации поиска
 userSchema.index({ email: 1 });
-userSchema.index({ username: 1 });
 
 export const User = model<IUser>('User', userSchema); 

@@ -1,18 +1,67 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from 'react-query';
 import { Toaster } from 'react-hot-toast';
+import { AuthProvider } from './contexts/AuthContext';
+import { ProtectedRoute } from './components/ProtectedRoute';
+import { Login } from './pages/Login';
 
-// Import pages
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import Accounts from './pages/Accounts';
-import AccountForm from './pages/AccountForm';
+// Временная главная страница
+const Dashboard = () => (
+  <div className="min-h-screen bg-gray-900 text-white p-8">
+    <div className="max-w-7xl mx-auto">
+      <div className="mb-8">
+        <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-blue-400 to-purple-600 bg-clip-text text-transparent">
+          OrbitHub Dashboard
+        </h1>
+        <p className="text-gray-400 text-lg">Welcome to your Instagram automation hub!</p>
+      </div>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
+          <h3 className="text-xl font-semibold mb-2">Instagram Accounts</h3>
+          <p className="text-gray-400">Manage your Instagram automation accounts</p>
+          <div className="mt-4 text-3xl font-bold text-blue-400">0</div>
+        </div>
+        
+        <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
+          <h3 className="text-xl font-semibold mb-2">Scheduled Posts</h3>
+          <p className="text-gray-400">Posts ready for automation</p>
+          <div className="mt-4 text-3xl font-bold text-green-400">0</div>
+        </div>
+        
+        <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
+          <h3 className="text-xl font-semibold mb-2">AdsPower Profiles</h3>
+          <p className="text-gray-400">Browser profiles for automation</p>
+          <div className="mt-4 text-3xl font-bold text-purple-400">0</div>
+        </div>
+      </div>
+      
+      <div className="mt-8 bg-gray-800 p-6 rounded-lg border border-gray-700">
+        <h2 className="text-2xl font-semibold mb-4">System Status</h2>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span>Authentication System</span>
+            <span className="text-green-400">✓ Online</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span>AdsPower Integration</span>
+            <span className="text-yellow-400">⚠ Pending Setup</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span>Dropbox Sync</span>
+            <span className="text-yellow-400">⚠ Pending Setup</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span>Instagram Automation</span>
+            <span className="text-yellow-400">⚠ Pending Setup</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
 
-// Import providers
-import { AuthProvider, useAuth } from './hooks/useAuth';
-
-// Create query client
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -22,139 +71,31 @@ const queryClient = new QueryClient({
   },
 });
 
-// Protected Route component
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary-600"></div>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
-  return <>{children}</>;
-}
-
-// Public Route component (redirect if authenticated)
-function PublicRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary-600"></div>
-      </div>
-    );
-  }
-
-  if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />;
-  }
-
-  return <>{children}</>;
-}
-
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <Router>
-          <div className="App min-h-screen bg-gray-50">
+          <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
             <Routes>
-              {/* Public routes */}
+              <Route path="/login" element={<Login />} />
               <Route 
-                path="/login" 
-                element={
-                  <PublicRoute>
-                    <Login />
-                  </PublicRoute>
-                } 
-              />
-
-              {/* Protected routes */}
-              <Route 
-                path="/dashboard" 
+                path="/" 
                 element={
                   <ProtectedRoute>
                     <Dashboard />
                   </ProtectedRoute>
                 } 
               />
-              
-              <Route 
-                path="/accounts" 
-                element={
-                  <ProtectedRoute>
-                    <Accounts />
-                  </ProtectedRoute>
-                } 
-              />
-              
-              <Route 
-                path="/accounts/new" 
-                element={
-                  <ProtectedRoute>
-                    <AccountForm />
-                  </ProtectedRoute>
-                } 
-              />
-              
-              <Route 
-                path="/accounts/:id/edit" 
-                element={
-                  <ProtectedRoute>
-                    <AccountForm />
-                  </ProtectedRoute>
-                } 
-              />
-
-              {/* Default redirect */}
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              
-              {/* 404 fallback */}
-              <Route 
-                path="*" 
-                element={
-                  <div className="min-h-screen flex items-center justify-center">
-                    <div className="text-center">
-                      <h1 className="text-4xl font-bold text-gray-900 mb-4">404</h1>
-                      <p className="text-gray-600 mb-8">Страница не найдена</p>
-                      <a 
-                        href="/dashboard" 
-                        className="text-primary-600 hover:text-primary-700 font-medium"
-                      >
-                        Вернуться на главную
-                      </a>
-                    </div>
-                  </div>
-                } 
-              />
             </Routes>
-
-            {/* Toast notifications */}
-            <Toaster
+            <Toaster 
               position="top-right"
               toastOptions={{
                 duration: 4000,
                 style: {
-                  background: '#363636',
+                  background: '#374151',
                   color: '#fff',
-                },
-                success: {
-                  style: {
-                    background: '#10b981',
-                  },
-                },
-                error: {
-                  style: {
-                    background: '#ef4444',
-                  },
+                  border: '1px solid #4B5563'
                 },
               }}
             />

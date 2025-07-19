@@ -1,269 +1,201 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 import { User } from '../models/User';
-import { generateTokens, verifyRefreshToken } from '../middleware/auth';
-import { AppError, asyncHandler } from '../middleware/errorHandler';
+import { generateTokens, verifyRefreshToken } from '../utils/jwt';
 import logger from '../utils/logger';
+import { AuthRequest } from '../middleware/auth';
 
-// Регистрация нового пользователя
-export const register = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-  const { username, email, password, role } = req.body;
+export class AuthController {
+  // Логин
+  static async login(req: Request, res: Response): Promise<void> {
+    try {
+      const { email, password } = req.body;
 
-  // Проверяем существует ли пользователь
-  const existingUser = await User.findOne({
-    $or: [{ email }, { username }]
-  });
-
-  if (existingUser) {
-    return next(new AppError('User with this email or username already exists', 400));
-  }
-
-  // Создаем нового пользователя
-  const user = new User({
-    username,
-    email,
-    password,
-    role: role || 'user'
-  });
-
-  await user.save();
-
-  // Генерируем токены
-  const tokens = generateTokens(user._id);
-
-  // Обновляем время последнего входа
-  user.lastLogin = new Date();
-  await user.save();
-
-  logger.info(`New user registered: ${username}`, {
-    userId: user._id,
-    email: user.email
-  });
-
-  res.status(201).json({
-    success: true,
-    message: 'User registered successfully',
-    data: {
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        isActive: user.isActive,
-        createdAt: user.createdAt
-      },
-      tokens
-    }
-  });
-});
-
-// Вход пользователя
-export const login = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-  const { email, password } = req.body;
-
-  // Находим пользователя по email
-  const user = await User.findOne({ email }).select('+password');
-
-  if (!user || !user.isActive) {
-    return next(new AppError('Invalid credentials or inactive account', 401));
-  }
-
-  // Проверяем пароль
-  const isPasswordValid = await user.comparePassword(password);
-
-  if (!isPasswordValid) {
-    return next(new AppError('Invalid credentials', 401));
-  }
-
-  // Генерируем токены
-  const tokens = generateTokens(user._id);
-
-  // Обновляем время последнего входа
-  user.lastLogin = new Date();
-  await user.save();
-
-  logger.info(`User logged in: ${user.username}`, {
-    userId: user._id,
-    ip: req.ip
-  });
-
-  res.json({
-    success: true,
-    message: 'Login successful',
-    data: {
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        isActive: user.isActive,
-        lastLogin: user.lastLogin
-      },
-      tokens
-    }
-  });
-});
-
-// Обновление токена доступа
-export const refreshToken = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-  const { refreshToken } = req.body;
-
-  if (!refreshToken) {
-    return next(new AppError('Refresh token is required', 400));
-  }
-
-  // Верифицируем refresh токен
-  const decoded = verifyRefreshToken(refreshToken);
-
-  if (!decoded) {
-    return next(new AppError('Invalid refresh token', 401));
-  }
-
-  // Проверяем существование пользователя
-  const user = await User.findById(decoded.userId);
-
-  if (!user || !user.isActive) {
-    return next(new AppError('User not found or inactive', 401));
-  }
-
-  // Генерируем новые токены
-  const tokens = generateTokens(user._id);
-
-  logger.info(`Token refreshed for user: ${user.username}`, {
-    userId: user._id
-  });
-
-  res.json({
-    success: true,
-    message: 'Token refreshed successfully',
-    data: {
-      tokens
-    }
-  });
-});
-
-// Получение информации о текущем пользователе
-export const getMe = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-  if (!req.user) {
-    return next(new AppError('User not authenticated', 401));
-  }
-
-  res.json({
-    success: true,
-    data: {
-      user: {
-        id: req.user._id,
-        username: req.user.username,
-        email: req.user.email,
-        role: req.user.role,
-        isActive: req.user.isActive,
-        lastLogin: req.user.lastLogin,
-        createdAt: req.user.createdAt
+      // Находим пользователя
+      const user = await User.findOne({ email, isActive: true });
+      if (!user) {
+        res.status(401).json({
+          success: false,
+          error: 'Invalid email or password'
+        });
+        return;
       }
+
+      // Проверяем пароль
+      const isValidPassword = await user.comparePassword(password);
+      if (!isValidPassword) {
+        res.status(401).json({
+          success: false,
+          error: 'Invalid email or password'
+        });
+        return;
+      }
+
+      // Генерируем токены
+      const tokens = generateTokens({
+        userId: user._id.toString(),
+        email: user.email,
+        role: user.role
+      });
+
+      // Обновляем последний логин
+      await User.findByIdAndUpdate(user._id, {
+        lastLogin: new Date()
+      });
+
+      logger.info(`User logged in: ${user.email}`);
+
+      res.json({
+        success: true,
+        data: {
+          user: {
+            id: user._id,
+            email: user.email,
+            name: user.name,
+            role: user.role
+          },
+          tokens
+        }
+      });
+    } catch (error) {
+      logger.error('Login error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error'
+      });
     }
-  });
-});
-
-// Обновление профиля пользователя
-export const updateProfile = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-  if (!req.user) {
-    return next(new AppError('User not authenticated', 401));
   }
 
-  const { username, email } = req.body;
-  const updateData: any = {};
+  // Регистрация
+  static async register(req: Request, res: Response): Promise<void> {
+    try {
+      const { email, password, name } = req.body;
 
-  if (username) updateData.username = username;
-  if (email) updateData.email = email;
+      // Проверяем существует ли пользователь
+      const existingUser = await User.findOne({ email });
+      if (existingUser) {
+        res.status(409).json({
+          success: false,
+          error: 'User with this email already exists'
+        });
+        return;
+      }
 
-  // Проверяем уникальность нового username или email
-  if (username || email) {
-    const existingUser = await User.findOne({
-      _id: { $ne: req.user._id },
-      $or: [
-        ...(username ? [{ username }] : []),
-        ...(email ? [{ email }] : [])
-      ]
-    });
+      // Создаем пользователя
+      const user = new User({
+        email,
+        password, // будет автоматически захеширован
+        name,
+        role: 'admin' // для MVP все админы
+      });
 
-    if (existingUser) {
-      return next(new AppError('Username or email already taken', 400));
+      await user.save();
+
+      // Генерируем токены
+      const tokens = generateTokens({
+        userId: user._id.toString(),
+        email: user.email,
+        role: user.role
+      });
+
+      logger.info(`New user registered: ${user.email}`);
+
+      res.status(201).json({
+        success: true,
+        data: {
+          user: {
+            id: user._id,
+            email: user.email,
+            name: user.name,
+            role: user.role
+          },
+          tokens
+        }
+      });
+    } catch (error) {
+      logger.error('Registration error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error'
+      });
     }
   }
 
-  const updatedUser = await User.findByIdAndUpdate(
-    req.user._id,
-    updateData,
-    { new: true, runValidators: true }
-  ).select('-password');
+  // Обновление токена
+  static async refreshToken(req: Request, res: Response): Promise<void> {
+    try {
+      const { refreshToken } = req.body;
 
-  if (!updatedUser) {
-    return next(new AppError('User not found', 404));
-  }
+      if (!refreshToken) {
+        res.status(401).json({
+          success: false,
+          error: 'Refresh token required'
+        });
+        return;
+      }
 
-  logger.info(`Profile updated for user: ${updatedUser.username}`, {
-    userId: updatedUser._id,
-    changes: updateData
-  });
+      const decoded = verifyRefreshToken(refreshToken);
+      
+      // Проверяем что пользователь существует
+      const user = await User.findById(decoded.userId);
+      if (!user || !user.isActive) {
+        res.status(401).json({
+          success: false,
+          error: 'User not found or inactive'
+        });
+        return;
+      }
 
-  res.json({
-    success: true,
-    message: 'Profile updated successfully',
-    data: {
-      user: updatedUser
+      // Генерируем новые токены
+      const tokens = generateTokens({
+        userId: user._id.toString(),
+        email: user.email,
+        role: user.role
+      });
+
+      res.json({
+        success: true,
+        data: { tokens }
+      });
+    } catch (error) {
+      logger.error('Refresh token error:', error);
+      res.status(403).json({
+        success: false,
+        error: 'Invalid refresh token'
+      });
     }
-  });
-});
-
-// Изменение пароля
-export const changePassword = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-  if (!req.user) {
-    return next(new AppError('User not authenticated', 401));
   }
 
-  const { currentPassword, newPassword } = req.body;
+  // Получение профиля
+  static async getProfile(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const user = await User.findById(req.user?.userId);
+      if (!user) {
+        res.status(404).json({
+          success: false,
+          error: 'User not found'
+        });
+        return;
+      }
 
-  if (!currentPassword || !newPassword) {
-    return next(new AppError('Current password and new password are required', 400));
+      res.json({
+        success: true,
+        data: {
+          user: {
+            id: user._id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            lastLogin: user.lastLogin,
+            createdAt: user.createdAt
+          }
+        }
+      });
+    } catch (error) {
+      logger.error('Get profile error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error'
+      });
+    }
   }
-
-  // Получаем пользователя с паролем
-  const user = await User.findById(req.user._id).select('+password');
-
-  if (!user) {
-    return next(new AppError('User not found', 404));
-  }
-
-  // Проверяем текущий пароль
-  const isCurrentPasswordValid = await user.comparePassword(currentPassword);
-
-  if (!isCurrentPasswordValid) {
-    return next(new AppError('Current password is incorrect', 400));
-  }
-
-  // Обновляем пароль
-  user.password = newPassword;
-  await user.save();
-
-  logger.info(`Password changed for user: ${user.username}`, {
-    userId: user._id
-  });
-
-  res.json({
-    success: true,
-    message: 'Password changed successfully'
-  });
-});
-
-// Выход пользователя (в будущем можно добавить blacklist токенов)
-export const logout = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-  // В будущем здесь можно добавить логику добавления токена в blacklist
-  
-  logger.info(`User logged out: ${req.user?.username}`, {
-    userId: req.user?._id
-  });
-
-  res.json({
-    success: true,
-    message: 'Logged out successfully'
-  });
-}); 
+} 

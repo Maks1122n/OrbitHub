@@ -1,35 +1,16 @@
-import express from 'express';
-import {
-  register,
-  login,
-  refreshToken,
-  getMe,
-  updateProfile,
-  changePassword,
-  logout
-} from '../controllers/authController';
+import { Router } from 'express';
+import { AuthController } from '../controllers/authController';
+import { validateLogin, validateRegister } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
-import {
-  validateRegister,
-  validateLogin,
-  validate,
-  registerSchema,
-  loginSchema
-} from '../middleware/validation';
 
-const router = express.Router();
+const router = Router();
 
-// Публичные маршруты (без аутентификации)
-router.post('/register', validateRegister, register);
-router.post('/login', validateLogin, login);
-router.post('/refresh-token', refreshToken);
+// Публичные роуты
+router.post('/login', validateLogin, AuthController.login);
+router.post('/register', validateRegister, AuthController.register);
+router.post('/refresh-token', AuthController.refreshToken);
 
-// Защищенные маршруты (требуют аутентификации)
-router.use(authenticateToken); // Все маршруты ниже требуют аутентификации
-
-router.get('/me', getMe);
-router.put('/profile', updateProfile);
-router.put('/change-password', changePassword);
-router.post('/logout', logout);
+// Защищенные роуты
+router.get('/profile', authenticateToken, AuthController.getProfile);
 
 export default router; 

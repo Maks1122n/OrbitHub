@@ -1,27 +1,18 @@
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
-import { User, IUser } from '../models/User';
-import { config } from '../config/env';
+import { verifyAccessToken } from '../utils/jwt';
+import { User } from '../models/User';
 import logger from '../utils/logger';
 
-// Расширяем интерфейс Request для типизации user
-declare global {
-  namespace Express {
-    interface Request {
-      user?: IUser;
-    }
-  }
+export interface AuthRequest extends Request {
+  user?: {
+    userId: string;
+    email: string;
+    role: string;
+  };
 }
 
-interface JwtPayload {
-  userId: string;
-  iat: number;
-  exp: number;
-}
-
-// Middleware для проверки JWT токена
 export const authenticateToken = async (
-  req: Request,
+  req: AuthRequest,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
@@ -30,117 +21,68 @@ export const authenticateToken = async (
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
     if (!token) {
-      res.status(401).json({ 
-        success: false, 
-        message: 'Access token required' 
+      res.status(401).json({
+        success: false,
+        error: 'Access token required'
       });
       return;
     }
 
-    // Верифицируем токен
-    const decoded = jwt.verify(token, config.jwtSecret) as JwtPayload;
+    const decoded = verifyAccessToken(token);
     
-    // Получаем пользователя из базы данных
-    const user = await User.findById(decoded.userId).select('-password');
-    
+    // Проверяем что пользователь существует и активен
+    const user = await User.findById(decoded.userId);
     if (!user || !user.isActive) {
-      res.status(401).json({ 
-        success: false, 
-        message: 'Invalid or inactive user' 
+      res.status(401).json({
+        success: false,
+        error: 'User not found or inactive'
       });
       return;
     }
 
-    // Добавляем пользователя в request
-    req.user = user;
+    req.user = {
+      userId: decoded.userId,
+      email: decoded.email,
+      role: decoded.role
+    };
+
     next();
-
   } catch (error) {
-    logger.error('Authentication error:', error);
-    
-    if (error instanceof jwt.TokenExpiredError) {
-      res.status(401).json({ 
-        success: false, 
-        message: 'Token expired' 
-      });
-    } else if (error instanceof jwt.JsonWebTokenError) {
-      res.status(401).json({ 
-        success: false, 
-        message: 'Invalid token' 
-      });
-    } else {
-      res.status(500).json({ 
-        success: false, 
-        message: 'Authentication failed' 
-      });
-    }
+    logger.error('Token verification error:', error);
+    res.status(403).json({
+      success: false,
+      error: 'Invalid or expired token'
+    });
   }
 };
 
-// Middleware для проверки роли администратора
 export const requireAdmin = (
-  req: Request,
+  req: AuthRequest,
   res: Response,
   next: NextFunction
 ): void => {
-  if (!req.user) {
-    res.status(401).json({ 
-      success: false, 
-      message: 'Authentication required' 
+  if (req.user?.role !== 'admin') {
+    res.status(403).json({
+      success: false,
+      error: 'Admin access required'
     });
     return;
   }
-
-  if (req.user.role !== 'admin') {
-    res.status(403).json({ 
-      success: false, 
-      message: 'Admin access required' 
-    });
-    return;
-  }
-
   next();
 };
 
-// Генерация JWT токенов
-export const generateTokens = (userId: string) => {
-  const accessToken = jwt.sign(
-    { userId },
-    config.jwtSecret,
-    { expiresIn: '15m' }
-  );
-
-  const refreshToken = jwt.sign(
-    { userId },
-    config.jwtRefreshSecret,
-    { expiresIn: '7d' }
-  );
-
-  return { accessToken, refreshToken };
+// Генерация JWT токена (legacy функция для совместимости)
+export const generateToken = (userId: string): string => {
+  const jwt = require('jsonwebtoken');
+  return jwt.sign({ userId }, process.env.JWT_SECRET || 'secret', { expiresIn: '24h' });
 };
 
-// Проверка refresh токена
-export const verifyRefreshToken = (token: string): JwtPayload | null => {
-  try {
-    return jwt.verify(token, config.jwtRefreshSecret) as JwtPayload;
-  } catch (error) {
-    logger.error('Refresh token verification failed:', error);
-    return null;
-  }
-};
-
-// Middleware для логирования запросов аутентифицированных пользователей
-export const logUserActivity = (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void => {
-  if (req.user) {
-    logger.info(`User activity: ${req.user.username} - ${req.method} ${req.path}`, {
-      userId: req.user._id,
-      ip: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-  }
-  next();
+// Проверка роли (legacy функция)
+export const checkRole = (roles: string[]) => {
+  return (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Insufficient permissions' });
+    }
+    next();
+  };
 }; 
