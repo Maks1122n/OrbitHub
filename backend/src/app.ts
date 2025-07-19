@@ -27,6 +27,7 @@ import apiRoutes from './routes';
 import authRoutes from './routes/auth';
 import adsPowerRoutes from './routes/adspower';
 import accountRoutes from './routes/accounts';
+import dropboxRoutes from './routes/dropbox';
 
 // Импорты сервисов
 import { AutomationService } from './services/AutomationService';
@@ -96,10 +97,27 @@ class App {
   }
 
   private initializeRoutes(): void {
-    // Health check с проверкой AdsPower
+    // Health check с проверкой AdsPower и Dropbox
     this.app.get('/health', async (req, res) => {
       try {
         const adsPowerStatus = await checkAdsPowerConnection();
+        
+        let dropboxStatus = false;
+        let dropboxInfo = null;
+        try {
+          const { DropboxService } = await import('./services/DropboxService');
+          const dropboxService = DropboxService.getInstance();
+          dropboxStatus = await dropboxService.validateAccessToken();
+          if (dropboxStatus) {
+            const timeRemaining = dropboxService.getTokenTimeRemaining();
+            dropboxInfo = {
+              tokenExpiring: dropboxService.isTokenExpiringSoon(),
+              timeRemaining
+            };
+          }
+        } catch (error) {
+          // Dropbox service not initialized
+        }
         
         res.json({ 
           status: 'OK', 
@@ -107,8 +125,10 @@ class App {
           environment: config.nodeEnv,
           services: {
             database: 'connected',
-            adspower: adsPowerStatus ? 'connected' : 'disconnected'
-          }
+            adspower: adsPowerStatus ? 'connected' : 'disconnected',
+            dropbox: dropboxStatus ? 'connected' : 'disconnected'
+          },
+          dropboxInfo
         });
       } catch (error) {
         res.status(500).json({
@@ -116,7 +136,8 @@ class App {
           timestamp: new Date().toISOString(),
           services: {
             database: 'unknown',
-            adspower: 'error'
+            adspower: 'error',
+            dropbox: 'error'
           }
         });
       }
@@ -130,6 +151,9 @@ class App {
     
     // Account маршруты
     this.app.use('/api/accounts', accountRoutes);
+    
+    // Dropbox маршруты
+    this.app.use('/api/dropbox', dropboxRoutes);
     
     // API маршруты
     this.app.use('/api', apiRoutes);
