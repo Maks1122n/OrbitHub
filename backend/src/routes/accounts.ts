@@ -1,57 +1,24 @@
-import express from 'express';
-import {
-  getAccounts,
-  getAccount,
-  createAccount,
-  updateAccount,
-  deleteAccount,
-  startAutomation,
-  stopAutomation,
-  publishNow,
-  getVideos,
-  getAccountStats
-} from '../controllers/accountController';
-import { authenticateToken, requireAdmin } from '../middleware/auth';
-import {
-  validateCreateAccount,
-  validateUpdateAccount,
-  validateIdParam,
-  validatePagination
-} from '../middleware/validation';
+import { Router } from 'express';
+import { AccountController } from '../controllers/accountController';
+import { authenticateToken } from '../middleware/auth';
+import { validateCreateAccount, validateUpdateAccount } from '../middleware/accountValidation';
 
-const router = express.Router();
+const router = Router();
 
-// Все маршруты требуют аутентификации
+// Все роуты требуют авторизации
 router.use(authenticateToken);
 
-// GET /api/accounts - Получение списка аккаунтов с пагинацией
-router.get('/', validatePagination, getAccounts);
+// CRUD операции
+router.get('/', AccountController.getAllAccounts);
+router.get('/stats', AccountController.getAccountsStats);
+router.get('/:accountId', AccountController.getAccount);
+router.post('/', validateCreateAccount, AccountController.createAccount);
+router.put('/:accountId', validateUpdateAccount, AccountController.updateAccount);
+router.delete('/:accountId', AccountController.deleteAccount);
 
-// GET /api/accounts/:id - Получение конкретного аккаунта
-router.get('/:id', validateIdParam, getAccount);
-
-// GET /api/accounts/:id/stats - Статистика аккаунта
-router.get('/:id/stats', validateIdParam, getAccountStats);
-
-// GET /api/accounts/:id/videos - Список видео из Dropbox
-router.get('/:id/videos', validateIdParam, getVideos);
-
-// POST /api/accounts - Создание нового аккаунта
-router.post('/', validateCreateAccount, createAccount);
-
-// PUT /api/accounts/:id - Обновление аккаунта
-router.put('/:id', validateIdParam, validateUpdateAccount, updateAccount);
-
-// DELETE /api/accounts/:id - Удаление аккаунта (только админ)
-router.delete('/:id', validateIdParam, requireAdmin, deleteAccount);
-
-// POST /api/accounts/:id/start - Запуск автоматизации
-router.post('/:id/start', validateIdParam, startAutomation);
-
-// POST /api/accounts/:id/stop - Остановка автоматизации
-router.post('/:id/stop', validateIdParam, stopAutomation);
-
-// POST /api/accounts/:id/publish - Ручная публикация
-router.post('/:id/publish', validateIdParam, publishNow);
+// Управление автоматизацией
+router.post('/:accountId/start', AccountController.startAutomation);
+router.post('/:accountId/stop', AccountController.stopAutomation);
+router.get('/:accountId/status', AccountController.checkAccountStatus);
 
 export default router; 

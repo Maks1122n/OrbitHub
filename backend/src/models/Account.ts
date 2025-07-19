@@ -1,35 +1,61 @@
 import { Schema, model, Document } from 'mongoose';
+import CryptoJS from 'crypto-js';
+import { config } from '../config/env';
 
 export interface IAccount extends Document {
   _id: string;
+  // Основная информация
   username: string;
   password: string; // зашифрованный
-  status: 'active' | 'inactive' | 'banned' | 'error';
+  displayName: string;
+  email?: string;
+  
+  // Статус и состояние
+  status: 'active' | 'inactive' | 'banned' | 'error' | 'pending';
   isRunning: boolean;
+  lastActivity?: Date;
+  
+  // Настройки публикаций
   maxPostsPerDay: number;
   currentVideoIndex: number;
+  postsToday: number;
+  
+  // Dropbox интеграция
   dropboxFolder: string;
+  dropboxAccessToken?: string; // если у каждого аккаунта свой токен
+  
+  // Контент настройки
   defaultCaption: string;
+  hashtagsTemplate?: string;
+  
+  // Расписание работы
   workingHours: {
     start: number; // час от 0 до 23
     end: number;   // час от 0 до 23
+    timezone?: string; // часовой пояс
   };
-  adsPowerProfileId?: string;
-  lastActivity?: Date;
-  postsToday: number;
-  createdAt: Date;
-  updatedAt: Date;
   
-  // Дополнительные настройки
-  settings: {
-    useRandomCaptions: boolean;
-    randomCaptions: string[];
-    delayBetweenActions: {
-      min: number;
-      max: number;
-    };
-    postingSchedule: 'random' | 'fixed';
-    fixedTimes?: string[]; // ['09:00', '15:00', '21:00']
+  // Интервалы публикаций
+  publishingIntervals: {
+    minHours: number; // минимальный интервал между постами
+    maxHours: number; // максимальный интервал
+    randomize: boolean; // случайные интервалы
+  };
+  
+  // AdsPower интеграция
+  adsPowerProfileId?: string;
+  adsPowerGroupId?: string;
+  
+  // Прокси настройки
+  proxySettings?: {
+    enabled: boolean;
+    type: 'http' | 'socks5';
+    host: string;
+    port: number;
+    username?: string;
+    password?: string;
+    country?: string;
+    notes?: string;
   };
   
   // Статистика
@@ -37,35 +63,73 @@ export interface IAccount extends Document {
     totalPosts: number;
     successfulPosts: number;
     failedPosts: number;
-    lastPostDate?: Date;
-    averagePostsPerDay: number;
+    lastSuccessfulPost?: Date;
+    lastError?: string;
+    avgPostsPerDay: number;
   };
+  
+  // Уведомления и алерты
+  notifications: {
+    enabled: boolean;
+    onError: boolean;
+    onSuccess: boolean;
+    onBan: boolean;
+  };
+  
+  // Метаданные
+  notes?: string;
+  tags?: string[];
+  createdBy: string; // ID пользователя
+  createdAt: Date;
+  updatedAt: Date;
+
+  // Методы
+  encryptPassword(password: string): string;
+  decryptPassword(): string;
 }
 
 const accountSchema = new Schema<IAccount>({
+  // Основная информация
   username: { 
     type: String, 
     required: true, 
     unique: true,
     trim: true,
-    match: [/^[a-zA-Z0-9._]{1,30}$/, 'Invalid Instagram username format']
+    lowercase: true
   },
   password: { 
     type: String, 
     required: true 
-  }, // будет зашифрован
+  },
+  displayName: { 
+    type: String, 
+    required: true,
+    trim: true
+  },
+  email: { 
+    type: String,
+    trim: true,
+    lowercase: true
+  },
+  
+  // Статус и состояние
   status: { 
     type: String, 
-    enum: ['active', 'inactive', 'banned', 'error'], 
-    default: 'inactive' 
+    enum: ['active', 'inactive', 'banned', 'error', 'pending'], 
+    default: 'pending' 
   },
   isRunning: { 
     type: Boolean, 
     default: false 
   },
+  lastActivity: { 
+    type: Date 
+  },
+  
+  // Настройки публикаций
   maxPostsPerDay: { 
     type: Number, 
-    default: 5, 
+    default: 3, 
     min: 1, 
     max: 20 
   },
@@ -74,16 +138,34 @@ const accountSchema = new Schema<IAccount>({
     default: 1,
     min: 1
   },
+  postsToday: { 
+    type: Number, 
+    default: 0,
+    min: 0
+  },
+  
+  // Dropbox интеграция
   dropboxFolder: { 
     type: String, 
     required: true,
     trim: true
   },
+  dropboxAccessToken: { 
+    type: String 
+  },
+  
+  // Контент настройки
   defaultCaption: { 
     type: String, 
     required: true,
-    maxlength: 2200 // Instagram caption limit
+    maxlength: 2200 // Instagram limit
   },
+  hashtagsTemplate: { 
+    type: String,
+    maxlength: 500
+  },
+  
+  // Расписание работы
   workingHours: {
     start: { 
       type: Number, 
@@ -96,138 +178,161 @@ const accountSchema = new Schema<IAccount>({
       default: 22, 
       min: 0, 
       max: 23 
+    },
+    timezone: { 
+      type: String, 
+      default: 'UTC' 
     }
   },
-  adsPowerProfileId: { 
-    type: String,
-    index: true
-  },
-  lastActivity: { 
-    type: Date 
-  },
-  postsToday: { 
-    type: Number, 
-    default: 0,
-    min: 0
+  
+  // Интервалы публикаций
+  publishingIntervals: {
+    minHours: { 
+      type: Number, 
+      default: 2,
+      min: 0.5,
+      max: 12
+    },
+    maxHours: { 
+      type: Number, 
+      default: 6,
+      min: 1,
+      max: 24
+    },
+    randomize: { 
+      type: Boolean, 
+      default: true 
+    }
   },
   
-  // Дополнительные настройки
-  settings: {
-    useRandomCaptions: {
-      type: Boolean,
-      default: false
+  // AdsPower интеграция
+  adsPowerProfileId: { 
+    type: String 
+  },
+  adsPowerGroupId: { 
+    type: String 
+  },
+  
+  // Прокси настройки
+  proxySettings: {
+    enabled: { 
+      type: Boolean, 
+      default: false 
     },
-    randomCaptions: [{
-      type: String,
-      maxlength: 2200
-    }],
-    delayBetweenActions: {
-      min: {
-        type: Number,
-        default: 2000, // 2 секунды
-        min: 1000
-      },
-      max: {
-        type: Number,
-        default: 5000, // 5 секунд
-        min: 1000
-      }
+    type: { 
+      type: String, 
+      enum: ['http', 'socks5'],
+      default: 'http'
     },
-    postingSchedule: {
-      type: String,
-      enum: ['random', 'fixed'],
-      default: 'random'
+    host: { 
+      type: String 
     },
-    fixedTimes: [{
-      type: String,
-      match: [/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format (HH:MM)']
-    }]
+    port: { 
+      type: Number,
+      min: 1,
+      max: 65535
+    },
+    username: { 
+      type: String 
+    },
+    password: { 
+      type: String 
+    },
+    country: { 
+      type: String 
+    },
+    notes: { 
+      type: String 
+    }
   },
   
   // Статистика
   stats: {
-    totalPosts: {
-      type: Number,
-      default: 0,
-      min: 0
+    totalPosts: { 
+      type: Number, 
+      default: 0 
     },
-    successfulPosts: {
-      type: Number,
-      default: 0,
-      min: 0
+    successfulPosts: { 
+      type: Number, 
+      default: 0 
     },
-    failedPosts: {
-      type: Number,
-      default: 0,
-      min: 0
+    failedPosts: { 
+      type: Number, 
+      default: 0 
     },
-    lastPostDate: {
-      type: Date
+    lastSuccessfulPost: { 
+      type: Date 
     },
-    averagePostsPerDay: {
-      type: Number,
-      default: 0,
-      min: 0
+    lastError: { 
+      type: String 
+    },
+    avgPostsPerDay: { 
+      type: Number, 
+      default: 0 
     }
+  },
+  
+  // Уведомления и алерты
+  notifications: {
+    enabled: { 
+      type: Boolean, 
+      default: true 
+    },
+    onError: { 
+      type: Boolean, 
+      default: true 
+    },
+    onSuccess: { 
+      type: Boolean, 
+      default: false 
+    },
+    onBan: { 
+      type: Boolean, 
+      default: true 
+    }
+  },
+  
+  // Метаданные
+  notes: { 
+    type: String,
+    maxlength: 1000
+  },
+  tags: [{ 
+    type: String,
+    trim: true
+  }],
+  createdBy: { 
+    type: Schema.Types.ObjectId, 
+    ref: 'User', 
+    required: true 
   }
 }, {
   timestamps: true
 });
 
-// Индексы для оптимизации
-accountSchema.index({ username: 1 });
-accountSchema.index({ status: 1 });
-accountSchema.index({ isRunning: 1 });
-accountSchema.index({ adsPowerProfileId: 1 });
+// Методы шифрования пароля
+accountSchema.methods.encryptPassword = function(password: string): string {
+  return CryptoJS.AES.encrypt(password, config.encryptionKey).toString();
+};
 
-// Виртуальное поле для успешности публикаций
-accountSchema.virtual('successRate').get(function() {
-  if (this.stats.totalPosts === 0) return 0;
-  return (this.stats.successfulPosts / this.stats.totalPosts) * 100;
-});
+accountSchema.methods.decryptPassword = function(): string {
+  const bytes = CryptoJS.AES.decrypt(this.password, config.encryptionKey);
+  return bytes.toString(CryptoJS.enc.Utf8);
+};
 
-// Middleware для обновления статистики
+// Middleware для шифрования пароля перед сохранением
 accountSchema.pre('save', function(next) {
-  // Обновляем среднее количество постов в день
-  if (this.stats.totalPosts > 0 && this.createdAt) {
-    const daysActive = Math.ceil((Date.now() - this.createdAt.getTime()) / (1000 * 60 * 60 * 24));
-    this.stats.averagePostsPerDay = Math.round((this.stats.totalPosts / daysActive) * 100) / 100;
+  if (this.isModified('password') && !this.password.includes('U2FsdGVkX1')) {
+    // Шифруем только если пароль изменился и еще не зашифрован
+    this.password = this.encryptPassword(this.password);
   }
   next();
 });
 
-// Методы экземпляра
-accountSchema.methods.incrementPostCount = function(success: boolean = true) {
-  this.stats.totalPosts += 1;
-  if (success) {
-    this.stats.successfulPosts += 1;
-  } else {
-    this.stats.failedPosts += 1;
-  }
-  this.stats.lastPostDate = new Date();
-  this.postsToday += 1;
-  return this.save();
-};
-
-accountSchema.methods.resetDailyCounter = function() {
-  this.postsToday = 0;
-  return this.save();
-};
-
-accountSchema.methods.canPostNow = function(): boolean {
-  // Проверяем лимит постов в день
-  if (this.postsToday >= this.maxPostsPerDay) {
-    return false;
-  }
-  
-  // Проверяем рабочие часы
-  const currentHour = new Date().getHours();
-  if (this.workingHours.start <= this.workingHours.end) {
-    return currentHour >= this.workingHours.start && currentHour <= this.workingHours.end;
-  } else {
-    // Переход через полночь
-    return currentHour >= this.workingHours.start || currentHour <= this.workingHours.end;
-  }
-};
+// Индексы для быстрого поиска
+accountSchema.index({ username: 1 });
+accountSchema.index({ status: 1 });
+accountSchema.index({ isRunning: 1 });
+accountSchema.index({ createdBy: 1 });
 
 export const Account = model<IAccount>('Account', accountSchema); 

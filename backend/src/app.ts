@@ -26,6 +26,7 @@ import { logUserActivity } from './middleware/auth';
 import apiRoutes from './routes';
 import authRoutes from './routes/auth';
 import adsPowerRoutes from './routes/adspower';
+import accountRoutes from './routes/accounts';
 
 // Импорты сервисов
 import { AutomationService } from './services/AutomationService';
@@ -126,6 +127,9 @@ class App {
     
     // AdsPower маршруты
     this.app.use('/api/adspower', adsPowerRoutes);
+    
+    // Account маршруты
+    this.app.use('/api/accounts', accountRoutes);
     
     // API маршруты
     this.app.use('/api', apiRoutes);
