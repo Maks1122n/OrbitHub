@@ -8,10 +8,10 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET || 'super-secret-key-change-in-production',
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || 'refresh-secret-key',
   
-  // AdsPower конфигурация
+  // AdsPower конфигурация - ТОЧНЫЙ URL!
   adspower: {
     host: process.env.ADSPOWER_HOST || 'http://local.adspower.net:50325',
-    apiKey: process.env.ADSPOWER_API_KEY || '', // если требуется
+    timeout: 30000, // 30 секунд
   },
   
   // Dropbox
@@ -24,8 +24,15 @@ export const config = {
   
   // Instagram лимиты
   instagram: {
-    defaultMaxPostsPerDay: 5,
-    minDelayBetweenPosts: 2 * 60 * 60 * 1000, // 2 часа в миллисекундах
-    maxDelayBetweenPosts: 6 * 60 * 60 * 1000, // 6 часов
-  }
+    defaultMaxPostsPerDay: Number(process.env.MAX_POSTS_PER_DAY) || 5,
+    minDelayBetweenPosts: Number(process.env.MIN_DELAY_BETWEEN_POSTS) * 1000 || 2 * 60 * 60 * 1000, // в миллисекундах
+    maxDelayBetweenPosts: Number(process.env.MAX_DELAY_BETWEEN_POSTS) * 1000 || 6 * 60 * 60 * 1000, // в миллисекундах
+  },
+
+  // Frontend URL
+  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
+
+  // Логирование
+  logLevel: process.env.LOG_LEVEL || 'info',
+  logRetentionDays: Number(process.env.LOG_RETENTION_DAYS) || 30
 }; 

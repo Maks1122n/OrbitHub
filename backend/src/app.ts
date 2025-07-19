@@ -10,6 +10,7 @@ import { config } from './config/env';
 import { connectDatabase } from './config/database';
 import logger from './utils/logger';
 import { createDefaultAdmin } from './utils/createAdmin';
+import { initializeAdsPower, checkAdsPowerConnection } from './config/adspower';
 
 // Импорты middleware
 import { 
@@ -94,6 +95,32 @@ class App {
   }
 
   private initializeRoutes(): void {
+    // Health check с проверкой AdsPower
+    this.app.get('/health', async (req, res) => {
+      try {
+        const adsPowerStatus = await checkAdsPowerConnection();
+        
+        res.json({ 
+          status: 'OK', 
+          timestamp: new Date().toISOString(),
+          environment: config.nodeEnv,
+          services: {
+            database: 'connected',
+            adspower: adsPowerStatus ? 'connected' : 'disconnected'
+          }
+        });
+      } catch (error) {
+        res.status(500).json({
+          status: 'ERROR',
+          timestamp: new Date().toISOString(),
+          services: {
+            database: 'unknown',
+            adspower: 'error'
+          }
+        });
+      }
+    });
+
     // Auth маршруты
     this.app.use('/api/auth', authRoutes);
     
@@ -114,7 +141,8 @@ class App {
         version: '1.0.0',
         environment: config.nodeEnv,
         timestamp: new Date().toISOString(),
-        documentation: '/api'
+        documentation: '/api',
+        health: '/health'
       });
     });
   }
@@ -174,6 +202,9 @@ class App {
       // Создаем админа по умолчанию
       await createDefaultAdmin();
 
+      // Инициализируем AdsPower
+      await initializeAdsPower();
+
       // Создаем необходимые директории
       await this.createDirectories();
 
@@ -185,6 +216,8 @@ class App {
         logger.info(`🚀 Server running on port ${config.port}`);
         logger.info(`📍 Environment: ${config.nodeEnv}`);
         logger.info(`🌐 API URL: http://localhost:${config.port}/api`);
+        logger.info(`📊 Health check: http://localhost:${config.port}/health`);
+        logger.info(`🔗 AdsPower API: http://local.adspower.net:50325`);
         
         if (config.nodeEnv === 'development') {
           logger.info(`📖 API Documentation: http://localhost:${config.port}/api`);
