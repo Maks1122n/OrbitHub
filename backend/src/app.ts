@@ -29,19 +29,18 @@ import adsPowerRoutes from './routes/adspower';
 import accountRoutes from './routes/accounts';
 import dropboxRoutes from './routes/dropbox';
 import instagramRoutes from './routes/instagram';
+import automationRoutes from './routes/automation';
 
 // Импорты сервисов
-import { AutomationService } from './services/AutomationService';
+import { getAutomationService } from './services/AutomationService';
 
 class App {
   public app: express.Application;
   private server: any;
   private io: Server;
-  private automationService: AutomationService;
 
   constructor() {
     this.app = express();
-    this.automationService = new AutomationService();
     
     // Инициализация
     this.initializeErrorHandlers();
@@ -159,6 +158,9 @@ class App {
     // Instagram маршруты
     this.app.use('/api/instagram', instagramRoutes);
     
+    // Automation маршруты
+    this.app.use('/api/automation', automationRoutes);
+    
     // API маршруты
     this.app.use('/api', apiRoutes);
 
@@ -241,7 +243,7 @@ class App {
       await this.createDirectories();
 
       // Запускаем сервис автоматизации
-      this.automationService.start();
+      getAutomationService().start();
 
       // Запускаем сервер
       this.server.listen(config.port, () => {
