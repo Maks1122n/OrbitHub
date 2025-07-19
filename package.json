@@ -1,0 +1,48 @@
+{
+  "name": "orbithub",
+  "version": "1.0.0",
+  "description": "Professional Instagram automation platform with AdsPower integration",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build": "npm run build:backend && npm run build:frontend",
+    "build:backend": "cd backend && npm run build",
+    "build:frontend": "cd frontend && npm run build",
+    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "clean": "rm -rf backend/node_modules frontend/node_modules backend/dist frontend/dist"
+  },
+  "keywords": [
+    "instagram",
+    "automation",
+    "adspower",
+    "social-media",
+    "marketing",
+    "dropbox",
+    "node.js",
+    "react",
+    "typescript"
+  ],
+  "author": "OrbitHub Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/orbithub.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/orbithub/issues"
+  },
+  "homepage": "https://github.com/your-username/orbithub#readme",
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+} 
