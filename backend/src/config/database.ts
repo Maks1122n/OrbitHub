@@ -9,7 +9,6 @@ export const connectDatabase = async (): Promise<void> => {
     const conn = await mongoose.connect(config.mongoUri, {
       serverSelectionTimeoutMS: 10000, // 10 секунд на подключение
       socketTimeoutMS: 45000, // 45 секунд на операции
-      bufferMaxEntries: 0, // Отключить буферизацию
       maxPoolSize: 10, // Максимум 10 соединений
       retryWrites: true,
       authSource: 'admin'
