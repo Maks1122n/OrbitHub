@@ -31,39 +31,40 @@ requiredDirs.forEach(dir => {
 
 const app = express();
 
-// Инициализация при старте
+// Инициализация при старте  
 const initializeApp = async () => {
   try {
-    await connectDatabase();
-    await createDefaultAdmin();
+    logger.info('🚀 Starting OrbitHub initialization...');
     
-    // В продакшене попробуем подключиться к AdsPower, но не критично если не получится
+    // Подключение к базе данных
     try {
-      await initializeAdsPower();
+      await connectDatabase();
+      logger.info('✅ Database connected successfully');
     } catch (error) {
-      logger.warn('AdsPower initialization failed (expected in cloud environment):', error);
+      logger.error('❌ Database connection failed:', error);
+      // Продолжаем работу без БД для диагностики
     }
     
-    // Автозапуск автоматизации в продакшене
-    if (config.nodeEnv === 'production') {
-      const { Account } = await import('./models/Account');
-      const activeAccountsCount = await Account.countDocuments({ 
-        isRunning: true, 
-        status: 'active' 
-      });
-
-      if (activeAccountsCount > 0) {
-        setTimeout(() => {
-          const automationService = getAutomationService();
-          automationService.start();
-          logger.info(`🤖 Automation started automatically (${activeAccountsCount} active accounts)`);
-        }, 10000); // Через 10 секунд после старта
-      }
+    // Создание админа по умолчанию
+    try {
+      await createDefaultAdmin();
+      logger.info('✅ Default admin created/verified');
+    } catch (error) {
+      logger.warn('⚠️ Default admin creation failed:', error);
+    }
+    
+    // AdsPower инициализация (не критично)
+    try {
+      await initializeAdsPower();
+      logger.info('✅ AdsPower initialized');
+    } catch (error) {
+      logger.warn('⚠️ AdsPower initialization failed (expected in cloud):', error);
     }
     
     logger.info('✅ Application initialization completed');
   } catch (error) {
     logger.error('❌ Application initialization failed:', error);
+    // Не завершаем процесс, чтобы можно было диагностировать
   }
 };
 
