@@ -789,5 +789,4 @@ export const getAutomationService = (): AutomationService => {
     automationServiceInstance = new AutomationService();
   }
   return automationServiceInstance;
-}; 
-} 
+};
