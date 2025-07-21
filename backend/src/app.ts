@@ -92,7 +92,7 @@ app.use(helmet({
 }));
 
 app.use(cors({
-  origin: config.nodeEnv === 'production' 
+      origin: config.nodeEnv === 'production' 
     ? [process.env.FRONTEND_URL || 'https://orbithub.onrender.com'] 
     : ['http://localhost:3000', 'http://localhost:5173'],
   credentials: true
@@ -127,58 +127,58 @@ app.get('/health', async (req, res) => {
     } catch (error) {
       // AdsPower недоступен в облачной среде
     }
-    
-    let dropboxStatus = false;
-    let dropboxInfo = null;
-    try {
-      const dropboxService = DropboxService.getInstance();
-      dropboxStatus = await dropboxService.validateAccessToken();
-      if (dropboxStatus) {
-        const timeRemaining = dropboxService.getTokenTimeRemaining();
-        dropboxInfo = {
-          tokenExpiring: dropboxService.isTokenExpiringSoon(),
-          timeRemaining
-        };
-      }
-    } catch (error) {
-      // Dropbox service not initialized
-    }
+        
+        let dropboxStatus = false;
+        let dropboxInfo = null;
+        try {
+          const dropboxService = DropboxService.getInstance();
+          dropboxStatus = await dropboxService.validateAccessToken();
+          if (dropboxStatus) {
+            const timeRemaining = dropboxService.getTokenTimeRemaining();
+            dropboxInfo = {
+              tokenExpiring: dropboxService.isTokenExpiringSoon(),
+              timeRemaining
+            };
+          }
+        } catch (error) {
+          // Dropbox service not initialized
+        }
 
     // Проверяем автоматизацию
     const automationService = getAutomationService();
     const automationRunning = automationService.isSystemRunning();
-    
-    res.json({ 
-      status: 'OK', 
-      timestamp: new Date().toISOString(),
-      environment: config.nodeEnv,
+        
+        res.json({ 
+          status: 'OK', 
+          timestamp: new Date().toISOString(),
+          environment: config.nodeEnv,
       uptime: process.uptime(),
-      services: {
-        database: 'connected',
-        adspower: adsPowerStatus ? 'connected' : 'disconnected',
+          services: {
+            database: 'connected',
+            adspower: adsPowerStatus ? 'connected' : 'disconnected',
         dropbox: dropboxStatus ? 'connected' : 'disconnected',
         automation: automationRunning ? 'running' : 'stopped'
-      },
+          },
       dropboxInfo,
       memory: process.memoryUsage(),
       version: '1.0.0'
-    });
+        });
   } catch (error: any) {
-    res.status(500).json({
-      status: 'ERROR',
+        res.status(500).json({
+          status: 'ERROR',
       error: error.message
+        });
+      }
     });
-  }
-});
 
 // Simple status endpoint
 app.get('/status', (req, res) => {
-  res.json({
+      res.json({
     status: 'OK',
-    timestamp: new Date().toISOString(),
+        timestamp: new Date().toISOString(),
     environment: config.nodeEnv
-  });
-});
+      });
+    });
 
 // Middleware для отслеживания всех API запросов
 app.use('/api/*', (req, res, next) => {
