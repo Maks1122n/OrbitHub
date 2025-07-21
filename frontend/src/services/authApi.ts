@@ -1,21 +1,23 @@
 import { api } from './api';
 
-export interface LoginCredentials {
-  email: string;
-  password: string;
-}
-
-export interface RegisterData {
-  name: string;
-  email: string;
-  password: string;
-}
-
 export interface User {
   id: string;
-  name: string;
   email: string;
-  role: string;
+  name: string;
+  role: 'admin' | 'user';
+  lastLogin?: string;
+  createdAt: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  name: string;
 }
 
 export interface AuthResponse {
@@ -23,27 +25,47 @@ export interface AuthResponse {
   data: {
     user: User;
     token: string;
+    tokens: {
+      accessToken: string;
+      refreshToken: string;
+    };
   };
 }
 
 export const authApi = {
-  // Авторизация
-  login: (credentials: LoginCredentials) =>
-    api.post<AuthResponse>('/auth/login', credentials),
+  // Вход в систему
+  login: async (data: LoginRequest) => {
+    const response = await api.post<AuthResponse>('/auth/login', data);
+    return response;
+  },
 
   // Регистрация
-  register: (userData: RegisterData) =>
-    api.post<AuthResponse>('/auth/register', userData),
-
-  // Получение профиля пользователя
-  getProfile: () =>
-    api.get<{ success: boolean; data: { user: User } }>('/auth/profile'),
+  register: async (data: RegisterRequest) => {
+    const response = await api.post<AuthResponse>('/auth/register', data);
+    return response;
+  },
 
   // Выход из системы
-  logout: () =>
-    api.post('/auth/logout'),
+  logout: async () => {
+    const response = await api.post('/auth/logout');
+    return response;
+  },
 
-  // Проверка токена
-  verifyToken: () =>
-    api.get('/auth/verify'),
+  // Обновление токена
+  refreshToken: async (refreshToken: string) => {
+    const response = await api.post('/auth/refresh', { refreshToken });
+    return response;
+  },
+
+  // Получение профиля
+  getProfile: async () => {
+    const response = await api.get('/auth/profile');
+    return response;
+  },
+
+  // Обновление профиля
+  updateProfile: async (data: Partial<User>) => {
+    const response = await api.put('/auth/profile', data);
+    return response;
+  }
 }; 

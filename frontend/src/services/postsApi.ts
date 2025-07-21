@@ -1,22 +1,5 @@
-import axios from 'axios';
-
-const API_BASE_URL = process.env.REACT_APP_API_URL || 
-  (typeof window !== 'undefined' && window.location.hostname.includes('onrender.com') 
-    ? `https://${window.location.hostname}/api`
-    : 'http://localhost:5000/api');
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-});
-
-// Добавляем токен аутентификации к каждому запросу
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+// Используем централизованный API клиент
+import { api } from './api';
 
 export interface Post {
   id: string;
@@ -36,7 +19,7 @@ export const postsApi = {
   getPosts: async (): Promise<Post[]> => {
     try {
       const response = await api.get('/posts');
-      return response.data;
+      return response.data.data?.posts || [];
     } catch (error) {
       console.error('Error fetching posts:', error);
       return [];

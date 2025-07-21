@@ -1,25 +1,5 @@
-import axios from 'axios';
-
-const API_BASE_URL = process.env.REACT_APP_API_URL || 
-  (typeof window !== 'undefined' && window.location.hostname.includes('onrender.com') 
-    ? `https://${window.location.hostname}/api`
-    : 'http://localhost:5000/api');
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-// Добавляем токен аутентификации к каждому запросу
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+// Используем централизованный API клиент
+import { api } from './api';
 
 export interface AutomationStatus {
   isRunning: boolean;
@@ -54,7 +34,15 @@ export const automationApi = {
   getStatus: async (): Promise<AutomationStatus> => {
     try {
       const response = await api.get('/automation/status');
-      return response.data;
+      return response.data.data || {
+        isRunning: false,
+        activeAccounts: 0,
+        totalAccounts: 0,
+        postsPublishedToday: 0,
+        successRate: 0,
+        uptime: 0,
+        nextScheduledPost: null
+      };
     } catch (error) {
       console.error('Error fetching automation status:', error);
       return {
@@ -73,7 +61,15 @@ export const automationApi = {
   getSettings: async (): Promise<AutomationSettings> => {
     try {
       const response = await api.get('/automation/settings');
-      return response.data;
+      return response.data.data || {
+        minDelayBetweenPosts: 3600,
+        maxDelayBetweenPosts: 7200,
+        maxPostsPerDay: 10,
+        workingHoursStart: '09:00',
+        workingHoursEnd: '18:00',
+        pauseOnWeekends: false,
+        enableRandomDelay: true
+      };
     } catch (error) {
       console.error('Error fetching automation settings:', error);
       return {
@@ -116,7 +112,7 @@ export const automationApi = {
   getLogs: async (): Promise<AutomationLog[]> => {
     try {
       const response = await api.get('/automation/logs');
-      return response.data;
+      return response.data.data || [];
     } catch (error) {
       console.error('Error fetching automation logs:', error);
       return [];

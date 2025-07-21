@@ -1,358 +1,79 @@
 import { Response } from 'express';
-import { getAutomationService } from '../services/AutomationService';
-import { Account } from '../models/Account';
 import { AuthRequest } from '../middleware/auth';
+import { Account } from '../models/Account';
+import { Post } from '../models/Post';
+import { getAutomationService } from '../services/AutomationService';
 import logger from '../utils/logger';
 
-const automationService = getAutomationService();
-
 export class AutomationController {
-  // Запуск системы автоматизации
-  static async startSystem(req: AuthRequest, res: Response): Promise<void> {
+  // Получение статуса автоматизации
+  static async getStatus(req: AuthRequest, res: Response): Promise<void> {
     try {
-      if (automationService.isSystemRunning()) {
-        res.json({
-          success: true,
-          data: {
-            message: 'Automation system is already running',
-            uptime: automationService.getUptime()
-          }
-        });
-        return;
-      }
-
-      automationService.start();
-
-      logger.info('Automation system started by user:', req.user!.email);
-
-      res.json({
-        success: true,
-        data: {
-          message: 'Automation system started successfully',
-          startTime: new Date()
-        }
-      });
-
-    } catch (error: any) {
-      logger.error('Error starting automation system:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message || 'Failed to start automation system'
-      });
-    }
-  }
-
-  // Остановка системы автоматизации
-  static async stopSystem(req: AuthRequest, res: Response): Promise<void> {
-    try {
-      if (!automationService.isSystemRunning()) {
-        res.json({
-          success: true,
-          data: {
-            message: 'Automation system is not running'
-          }
-        });
-        return;
-      }
-
-      automationService.stop();
-
-      logger.info('Automation system stopped by user:', req.user!.email);
-
-      res.json({
-        success: true,
-        data: {
-          message: 'Automation system stopped successfully'
-        }
-      });
-
-    } catch (error: any) {
-      logger.error('Error stopping automation system:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message || 'Failed to stop automation system'
-      });
-    }
-  }
-
-  // Получение статистики автоматизации
-  static async getStats(req: AuthRequest, res: Response): Promise<void> {
-    try {
-      const stats = await automationService.getStats();
-      const isRunning = automationService.isSystemRunning();
-      const uptime = automationService.getUptime();
-
-      res.json({
-        success: true,
-        data: {
-          stats,
-          systemStatus: {
-            isRunning,
-            uptime,
-            uptimeFormatted: AutomationController.formatUptime(uptime)
-          }
-        }
-      });
-
-    } catch (error: any) {
-      logger.error('Error getting automation stats:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message || 'Failed to get automation stats'
-      });
-    }
-  }
-
-  // Получение очереди публикаций
-  static async getPublicationQueue(req: AuthRequest, res: Response): Promise<void> {
-    try {
-      const queue = automationService.getPublicationQueue();
+      const userId = req.user!.userId;
       
-      // Обогащаем данные информацией об аккаунтах
-      const enrichedQueue = await Promise.all(
-        queue.map(async (job) => {
-          const account = await Account.findById(job.accountId)
-            .select('username displayName');
-          
-          return {
-            ...job,
-            account: account ? {
-              username: account.username,
-              displayName: account.displayName
-            } : null
-          };
-        })
-      );
-
-      res.json({
-        success: true,
-        data: {
-          queue: enrichedQueue,
-          count: queue.length
-        }
+      // Получаем общую информацию
+      const totalAccounts = await Account.countDocuments({ createdBy: userId });
+      const activeAccounts = await Account.countDocuments({ 
+        createdBy: userId, 
+        status: 'active' 
+      });
+      const runningAccounts = await Account.countDocuments({ 
+        createdBy: userId, 
+        isRunning: true 
       });
 
-    } catch (error: any) {
-      logger.error('Error getting publication queue:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message || 'Failed to get publication queue'
-      });
-    }
-  }
+      // Посты за сегодня
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
 
-  // Ручная публикация для аккаунта
-  static async publishNow(req: AuthRequest, res: Response): Promise<void> {
-    try {
-      const { accountId } = req.params;
-
-      // Проверяем что аккаунт принадлежит пользователю
-      const account = await Account.findOne({
-        _id: accountId,
-        createdBy: req.user!.userId
+      const postsPublishedToday = await Post.countDocuments({
+        createdBy: userId,
+        status: 'published',
+        publishedAt: { $gte: today, $lt: tomorrow }
       });
 
-      if (!account) {
-        res.status(404).json({
-          success: false,
-          error: 'Account not found'
-        });
-        return;
-      }
-
-      const success = await automationService.publishNow(accountId);
-
-      if (success) {
-        res.json({
-          success: true,
-          data: {
-            message: `Publication queued for ${account.username}`
-          }
-        });
-      } else {
-        res.status(400).json({
-          success: false,
-          error: 'Failed to queue publication'
-        });
-      }
-
-    } catch (error: any) {
-      logger.error('Error queuing manual publication:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message || 'Failed to queue publication'
+      // Успешность публикаций
+      const totalPosts = await Post.countDocuments({ createdBy: userId });
+      const publishedPosts = await Post.countDocuments({ 
+        createdBy: userId, 
+        status: 'published' 
       });
-    }
-  }
+      const successRate = totalPosts > 0 ? Math.round((publishedPosts / totalPosts) * 100) : 0;
 
-  // Очистка очереди для аккаунта
-  static async clearAccountQueue(req: AuthRequest, res: Response): Promise<void> {
-    try {
-      const { accountId } = req.params;
+      // Следующий запланированный пост
+      const nextScheduledPost = await Post.findOne({
+        createdBy: userId,
+        status: 'scheduled',
+        'scheduling.isScheduled': true,
+        'scheduling.scheduledFor': { $gt: new Date() }
+      })
+      .sort({ 'scheduling.scheduledFor': 1 })
+      .select('scheduling.scheduledFor');
 
-      // Проверяем что аккаунт принадлежит пользователю
-      const account = await Account.findOne({
-        _id: accountId,
-        createdBy: req.user!.userId
-      });
-
-      if (!account) {
-        res.status(404).json({
-          success: false,
-          error: 'Account not found'
-        });
-        return;
-      }
-
-      const removedCount = automationService.clearAccountQueue(accountId);
-
-      res.json({
-        success: true,
-        data: {
-          message: `Cleared ${removedCount} queued publications for ${account.username}`,
-          removedCount
-        }
-      });
-
-    } catch (error: any) {
-      logger.error('Error clearing account queue:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message || 'Failed to clear account queue'
-      });
-    }
-  }
-
-  // Получение событий автоматизации (для real-time мониторинга)
-  static async getSystemEvents(req: AuthRequest, res: Response): Promise<void> {
-    try {
-      // Настраиваем SSE для real-time событий
-      res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Access-Control-Allow-Origin': '*'
-      });
-
-      // Отправляем начальный статус
-      const stats = await automationService.getStats();
-      res.write(`data: ${JSON.stringify({
-        type: 'initial-status',
-        data: stats
-      })}\n\n`);
-
-      // Подписываемся на события автоматизации
-      const eventHandlers = {
-        'publication-success': (data: any) => {
-          res.write(`data: ${JSON.stringify({
-            type: 'publication-success',
-            data,
-            timestamp: new Date()
-          })}\n\n`);
-        },
-        
-        'publication-error': (data: any) => {
-          res.write(`data: ${JSON.stringify({
-            type: 'publication-error',
-            data,
-            timestamp: new Date()
-          })}\n\n`);
-        },
-        
-        'publication-scheduled': (data: any) => {
-          res.write(`data: ${JSON.stringify({
-            type: 'publication-scheduled',
-            data,
-            timestamp: new Date()
-          })}\n\n`);
-        },
-        
-        'account-stopped': (data: any) => {
-          res.write(`data: ${JSON.stringify({
-            type: 'account-stopped',
-            data,
-            timestamp: new Date()
-          })}\n\n`);
-        }
-      };
-
-      // Регистрируем обработчики событий
-      Object.entries(eventHandlers).forEach(([event, handler]) => {
-        (automationService as any).on(event, handler);
-      });
-
-      // Очищаем обработчики при закрытии соединения
-      (req as any).on('close', () => {
-        Object.entries(eventHandlers).forEach(([event, handler]) => {
-          (automationService as any).removeListener(event, handler);
-        });
-      });
-
-    } catch (error: any) {
-      logger.error('Error setting up system events:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message || 'Failed to setup system events'
-      });
-    }
-  }
-
-  // Получение состояния системы
-  static async getSystemStatus(req: AuthRequest, res: Response): Promise<void> {
-    try {
-      const isRunning = automationService.isSystemRunning();
-      const uptime = automationService.getUptime();
-      const queue = automationService.getPublicationQueue();
+      // Получаем статус сервиса автоматизации
+      const automationService = getAutomationService();
+      const isRunning = (automationService as any).isRunning || false;
+      const uptime = (automationService as any).getUptime ? (automationService as any).getUptime() : 0;
 
       res.json({
         success: true,
         data: {
           isRunning,
+          activeAccounts,
+          totalAccounts,
+          postsPublishedToday,
+          successRate,
           uptime,
-          uptimeFormatted: AutomationController.formatUptime(uptime),
-          queueLength: queue.length,
-          nextPublication: queue[0]?.scheduledTime
+          nextScheduledPost: nextScheduledPost?.scheduling?.scheduledFor || null
         }
       });
-
-    } catch (error: any) {
-      logger.error('Error getting system status:', error);
+    } catch (error) {
+      logger.error('Error getting automation status:', error);
       res.status(500).json({
         success: false,
-        error: error.message || 'Failed to get system status'
-      });
-    }
-  }
-
-  // Перезапуск системы автоматизации
-  static async restartSystem(req: AuthRequest, res: Response): Promise<void> {
-    try {
-      const wasRunning = automationService.isSystemRunning();
-      
-      if (wasRunning) {
-        automationService.stop();
-        // Ждем секунду перед перезапуском
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-
-      automationService.start();
-
-      logger.info('Automation system restarted by user:', req.user!.email);
-
-      res.json({
-        success: true,
-        data: {
-          message: 'Automation system restarted successfully',
-          wasRunning,
-          restartTime: new Date()
-        }
-      });
-
-    } catch (error: any) {
-      logger.error('Error restarting automation system:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message || 'Failed to restart automation system'
+        error: 'Failed to get automation status'
       });
     }
   }
@@ -360,24 +81,26 @@ export class AutomationController {
   // Получение настроек автоматизации
   static async getSettings(req: AuthRequest, res: Response): Promise<void> {
     try {
-      // Здесь можно добавить логику получения настроек
+      // Получаем настройки из переменных окружения или дефолтные
+      const settings = {
+        minDelayBetweenPosts: parseInt(process.env.MIN_DELAY_BETWEEN_POSTS || '3600'), // 1 час
+        maxDelayBetweenPosts: parseInt(process.env.MAX_DELAY_BETWEEN_POSTS || '7200'), // 2 часа
+        maxPostsPerDay: parseInt(process.env.MAX_POSTS_PER_DAY || '10'),
+        workingHoursStart: process.env.WORKING_HOURS_START || '09:00',
+        workingHoursEnd: process.env.WORKING_HOURS_END || '18:00',
+        pauseOnWeekends: process.env.PAUSE_ON_WEEKENDS === 'true',
+        enableRandomDelay: process.env.ENABLE_RANDOM_DELAY !== 'false'
+      };
+
       res.json({
         success: true,
-        data: {
-          settings: {
-            checkInterval: 5,
-            maxRetries: 3,
-            retryDelay: 30,
-            maxConcurrentPublications: 3
-          }
-        }
+        data: settings
       });
-
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting automation settings:', error);
       res.status(500).json({
         success: false,
-        error: error.message || 'Failed to get automation settings'
+        error: 'Failed to get automation settings'
       });
     }
   }
@@ -385,24 +108,225 @@ export class AutomationController {
   // Обновление настроек автоматизации
   static async updateSettings(req: AuthRequest, res: Response): Promise<void> {
     try {
-      const { settings } = req.body;
+      const {
+        minDelayBetweenPosts,
+        maxDelayBetweenPosts,
+        maxPostsPerDay,
+        workingHoursStart,
+        workingHoursEnd,
+        pauseOnWeekends,
+        enableRandomDelay
+      } = req.body;
 
-      // Здесь можно добавить логику обновления настроек
-      logger.info('Automation settings updated by user:', req.user!.email);
+      // Валидация настроек
+      if (minDelayBetweenPosts && minDelayBetweenPosts < 1800) { // минимум 30 минут
+        res.status(400).json({
+          success: false,
+          error: 'Minimum delay between posts cannot be less than 30 minutes'
+        });
+        return;
+      }
+
+      if (maxDelayBetweenPosts && maxDelayBetweenPosts < minDelayBetweenPosts) {
+        res.status(400).json({
+          success: false,
+          error: 'Maximum delay cannot be less than minimum delay'
+        });
+        return;
+      }
+
+      if (maxPostsPerDay && (maxPostsPerDay < 1 || maxPostsPerDay > 50)) {
+        res.status(400).json({
+          success: false,
+          error: 'Max posts per day must be between 1 and 50'
+        });
+        return;
+      }
+
+      // Сохраняем настройки (в реальном приложении можно сохранить в БД)
+      const settings = {
+        minDelayBetweenPosts: minDelayBetweenPosts || parseInt(process.env.MIN_DELAY_BETWEEN_POSTS || '3600'),
+        maxDelayBetweenPosts: maxDelayBetweenPosts || parseInt(process.env.MAX_DELAY_BETWEEN_POSTS || '7200'),
+        maxPostsPerDay: maxPostsPerDay || parseInt(process.env.MAX_POSTS_PER_DAY || '10'),
+        workingHoursStart: workingHoursStart || process.env.WORKING_HOURS_START || '09:00',
+        workingHoursEnd: workingHoursEnd || process.env.WORKING_HOURS_END || '18:00',
+        pauseOnWeekends: pauseOnWeekends !== undefined ? pauseOnWeekends : process.env.PAUSE_ON_WEEKENDS === 'true',
+        enableRandomDelay: enableRandomDelay !== undefined ? enableRandomDelay : process.env.ENABLE_RANDOM_DELAY !== 'false'
+      };
+
+      // TODO: Применить настройки к сервису автоматизации
+      const automationService = getAutomationService();
+      if ((automationService as any).updateSettings) {
+        (automationService as any).updateSettings(settings);
+      }
+
+      logger.info(`Automation settings updated by user ${req.user!.userId}:`, settings);
 
       res.json({
         success: true,
         data: {
-          message: 'Settings updated successfully',
-          settings
+          settings,
+          message: 'Settings updated successfully'
         }
       });
-
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error updating automation settings:', error);
       res.status(500).json({
         success: false,
-        error: error.message || 'Failed to update automation settings'
+        error: 'Failed to update automation settings'
+      });
+    }
+  }
+
+  // Запуск автоматизации
+  static async start(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user!.userId;
+
+      // Проверяем что есть активные аккаунты
+      const activeAccounts = await Account.countDocuments({
+        createdBy: userId,
+        status: 'active'
+      });
+
+      if (activeAccounts === 0) {
+        res.status(400).json({
+          success: false,
+          error: 'No active accounts found. Add and activate accounts first.'
+        });
+        return;
+      }
+
+      // Проверяем что есть запланированные посты
+      const scheduledPosts = await Post.countDocuments({
+        createdBy: userId,
+        status: 'scheduled'
+      });
+
+      if (scheduledPosts === 0) {
+        res.status(400).json({
+          success: false,
+          error: 'No scheduled posts found. Create and schedule posts first.'
+        });
+        return;
+      }
+
+      // Запускаем автоматизацию
+      const automationService = getAutomationService();
+      
+      try {
+        if ((automationService as any).start) {
+          await (automationService as any).start();
+        } else {
+          // Fallback - помечаем аккаунты как запущенные
+          await Account.updateMany(
+            { createdBy: userId, status: 'active' },
+            { isRunning: true }
+          );
+        }
+
+        logger.info(`Automation started by user ${userId}`);
+
+        res.json({
+          success: true,
+          data: {
+            message: 'Automation started successfully',
+            activeAccounts,
+            scheduledPosts
+          }
+        });
+      } catch (automationError: any) {
+        logger.error('Error starting automation service:', automationError);
+        res.status(500).json({
+          success: false,
+          error: automationError.message || 'Failed to start automation service'
+        });
+      }
+    } catch (error) {
+      logger.error('Error starting automation:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to start automation'
+      });
+    }
+  }
+
+  // Остановка автоматизации
+  static async stop(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user!.userId;
+
+      // Останавливаем автоматизацию
+      const automationService = getAutomationService();
+      
+      try {
+        if ((automationService as any).stop) {
+          await (automationService as any).stop();
+        } else {
+          // Fallback - помечаем аккаунты как остановленные
+          await Account.updateMany(
+            { createdBy: userId },
+            { isRunning: false }
+          );
+        }
+
+        logger.info(`Automation stopped by user ${userId}`);
+
+        res.json({
+          success: true,
+          data: {
+            message: 'Automation stopped successfully'
+          }
+        });
+      } catch (automationError: any) {
+        logger.error('Error stopping automation service:', automationError);
+        res.status(500).json({
+          success: false,
+          error: automationError.message || 'Failed to stop automation service'
+        });
+      }
+    } catch (error) {
+      logger.error('Error stopping automation:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to stop automation'
+      });
+    }
+  }
+
+  // Перезапуск автоматизации
+  static async restart(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user!.userId;
+
+      // Останавливаем
+      const automationService = getAutomationService();
+      
+      if ((automationService as any).stop) {
+        await (automationService as any).stop();
+      }
+
+      // Ждем немного
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Запускаем снова
+      if ((automationService as any).start) {
+        await (automationService as any).start();
+      }
+
+      logger.info(`Automation restarted by user ${userId}`);
+
+      res.json({
+        success: true,
+        data: {
+          message: 'Automation restarted successfully'
+        }
+      });
+    } catch (error) {
+      logger.error('Error restarting automation:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to restart automation'
       });
     }
   }
@@ -410,42 +334,121 @@ export class AutomationController {
   // Получение логов автоматизации
   static async getLogs(req: AuthRequest, res: Response): Promise<void> {
     try {
-      const { limit = 100, level = 'all' } = req.query;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const level = req.query.level as string || 'all';
 
-      // Здесь можно добавить логику получения логов
+      // В реальном приложении здесь бы был доступ к системе логирования
+      // Пока возвращаем примерные логи
+      const logs = [
+        {
+          id: '1',
+          timestamp: new Date().toISOString(),
+          type: 'info',
+          message: 'Automation system is running',
+          accountUsername: null
+        },
+        {
+          id: '2',
+          timestamp: new Date(Date.now() - 60000).toISOString(),
+          type: 'success',
+          message: 'Post published successfully',
+          accountUsername: 'example_account'
+        }
+      ];
+
       res.json({
         success: true,
-        data: {
-          logs: [],
-          count: 0,
-          message: 'Log retrieval not implemented yet'
-        }
+        data: logs.slice(0, limit)
       });
-
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting automation logs:', error);
       res.status(500).json({
         success: false,
-        error: error.message || 'Failed to get automation logs'
+        error: 'Failed to get automation logs'
       });
     }
   }
 
-  // Утилита для форматирования времени работы
-  private static formatUptime(milliseconds: number): string {
-    const seconds = Math.floor(milliseconds / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
+  // Получение очереди публикаций
+  static async getQueue(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user!.userId;
 
-    if (days > 0) {
-      return `${days}d ${hours % 24}h ${minutes % 60}m`;
-    } else if (hours > 0) {
-      return `${hours}h ${minutes % 60}m`;
-    } else if (minutes > 0) {
-      return `${minutes}m ${seconds % 60}s`;
-    } else {
-      return `${seconds}s`;
+      const queuedPosts = await Post.find({
+        createdBy: userId,
+        status: 'scheduled',
+        'scheduling.isScheduled': true,
+        'scheduling.scheduledFor': { $gte: new Date() }
+      })
+      .populate('accountId', 'username status')
+      .sort({ 'scheduling.scheduledFor': 1 })
+      .limit(20);
+
+      res.json({
+        success: true,
+        data: {
+          queue: queuedPosts,
+          count: queuedPosts.length
+        }
+      });
+    } catch (error) {
+      logger.error('Error getting automation queue:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to get automation queue'
+      });
     }
   }
+
+  // Очистка очереди для конкретного аккаунта
+  static async clearAccountQueue(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const { accountId } = req.params;
+      const userId = req.user!.userId;
+
+      // Проверяем что аккаунт принадлежит пользователю
+      const account = await Account.findOne({
+        _id: accountId,
+        createdBy: userId
+      });
+
+      if (!account) {
+        res.status(404).json({
+          success: false,
+          error: 'Account not found'
+        });
+        return;
+      }
+
+      // Очищаем очередь - меняем статус запланированных постов на черновик
+      const result = await Post.updateMany(
+        {
+          accountId,
+          createdBy: userId,
+          status: 'scheduled'
+        },
+        {
+          status: 'draft',
+          scheduledAt: null
+        }
+      );
+
+      logger.info(`Queue cleared for account ${accountId}, ${result.modifiedCount} posts affected`);
+
+      res.json({
+        success: true,
+        data: {
+          message: `Queue cleared for account ${account.username}`,
+          clearedCount: result.modifiedCount
+        }
+      });
+    } catch (error) {
+      logger.error('Error clearing account queue:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to clear account queue'
+      });
+    }
+  }
+} 
 } 

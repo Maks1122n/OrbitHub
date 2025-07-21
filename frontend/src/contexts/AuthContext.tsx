@@ -67,15 +67,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         
         setUser(userData);
         
-        toast.success(`Welcome back, ${userData.name}!`);
+        toast.success(`Добро пожаловать, ${userData.name}!`);
         return true;
       } else {
-        toast.error('Invalid credentials');
+        toast.error('Неверные учетные данные');
         return false;
       }
     } catch (error: any) {
       console.error('Login error:', error);
-      const message = error.response?.data?.error || 'Login failed. Please try again.';
+      const message = error.response?.data?.error || 'Ошибка входа. Попробуйте снова.';
       toast.error(message);
       return false;
     }
@@ -93,7 +93,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       localStorage.removeItem('user');
       setUser(null);
       
-      toast.success('Logged out successfully');
+      toast.success('Выход выполнен успешно');
       
       // Перенаправляем на страницу логина
       window.location.href = '/login';

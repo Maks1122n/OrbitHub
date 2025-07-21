@@ -55,6 +55,7 @@ export class AuthController {
             name: user.name,
             role: user.role
           },
+          token: tokens.accessToken, // Для совместимости с frontend
           tokens
         }
       });
@@ -111,6 +112,7 @@ export class AuthController {
             name: user.name,
             role: user.role
           },
+          token: tokens.accessToken, // Для совместимости с frontend
           tokens
         }
       });

@@ -1,163 +1,260 @@
-import { Schema, model, Document } from 'mongoose';
+import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IPost extends Document {
   _id: string;
+  title: string;
+  content: string;
+  mediaUrl?: string;
+  mediaType: 'image' | 'video';
+  scheduledAt?: Date;
+  status: 'scheduled' | 'published' | 'failed' | 'draft';
   accountId: string;
-  videoFileName: string;
-  caption: string;
-  hashtags?: string[];
-  location?: string;
-  
-  status: 'pending' | 'publishing' | 'published' | 'failed' | 'scheduled';
-  
-  // Instagram данные
-  instagramUrl?: string;
-  instagramId?: string;
-  
-  // Временные метки
-  scheduledFor?: Date;
-  publishedAt?: Date;
-  
-  // Обработка ошибок
+  createdBy: string;
   error?: string;
-  errorType?: 'login' | 'upload' | 'publish' | 'banned' | 'network';
-  retryCount: number;
-  
-  // Метаданные
-  videoSize?: number;
-  videoDuration?: number;
-  processingTime?: number;
-  
+  instagramUrl?: string;
+  publishedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+  metadata: {
+    fileSize?: number;
+    duration?: number;
+    videoPath?: string;
+    thumbnailPath?: string;
+  };
+  attempts: {
+    count: number;
+    lastAttempt?: Date;
+    errors: string[];
+  };
+  scheduling: {
+    isScheduled: boolean;
+    scheduledFor?: Date;
+    priority: 'low' | 'normal' | 'high';
+  };
+  markAsPublished: (instagramUrl?: string) => Promise<void>;
+  markAsFailed: (error: string) => Promise<void>;
+  incrementAttempt: (error?: string) => Promise<void>;
 }
 
-const postSchema = new Schema<IPost>({
+const PostSchema = new Schema<IPost>({
+  title: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  content: {
+    type: String,
+    required: [true, 'Post content is required'],
+    trim: true,
+    maxlength: [2200, 'Content cannot exceed 2200 characters']
+  },
+  mediaUrl: {
+    type: String,
+    trim: true
+  },
+  mediaType: {
+    type: String,
+    enum: ['image', 'video'],
+    required: [true, 'Media type is required']
+  },
+  scheduledAt: {
+    type: Date
+  },
+  status: {
+    type: String,
+    enum: ['scheduled', 'published', 'failed', 'draft'],
+    default: 'draft',
+    required: true
+  },
   accountId: {
     type: Schema.Types.ObjectId as any,
     ref: 'Account',
-    required: true,
-    index: true
+    required: [true, 'Account ID is required']
   },
-  
-  videoFileName: {
-    type: String,
-    required: true,
-    trim: true
+  createdBy: {
+    type: Schema.Types.ObjectId as any,
+    ref: 'User',
+    required: [true, 'Created by user ID is required']
   },
-  
-  caption: {
-    type: String,
-    required: true,
-    maxlength: 2200 // Instagram limit
-  },
-  
-  hashtags: [{
-    type: String,
-    trim: true
-  }],
-  
-  location: {
+  error: {
     type: String,
     trim: true
   },
-  
-  status: {
-    type: String,
-    enum: ['pending', 'publishing', 'published', 'failed', 'scheduled'],
-    default: 'pending',
-    index: true
-  },
-  
-  // Instagram данные
   instagramUrl: {
     type: String,
     trim: true
   },
-  
-  instagramId: {
-    type: String,
-    trim: true
-  },
-  
-  // Временные метки
-  scheduledFor: {
-    type: Date,
-    index: true
-  },
-  
   publishedAt: {
-    type: Date,
-    index: true
+    type: Date
   },
-  
-  // Обработка ошибок
-  error: {
-    type: String
+  metadata: {
+    fileSize: {
+      type: Number,
+      min: 0
+    },
+    duration: {
+      type: Number,
+      min: 0
+    },
+    videoPath: {
+      type: String,
+      trim: true
+    },
+    thumbnailPath: {
+      type: String,
+      trim: true
+    }
   },
-  
-  errorType: {
-    type: String,
-    enum: ['login', 'upload', 'publish', 'banned', 'network']
+  attempts: {
+    count: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    lastAttempt: {
+      type: Date
+    },
+    errors: [{
+      type: String,
+      trim: true
+    }]
   },
-  
-  retryCount: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-  
-  // Метаданные
-  videoSize: {
-    type: Number,
-    min: 0
-  },
-  
-  videoDuration: {
-    type: Number,
-    min: 0
-  },
-  
-  processingTime: {
-    type: Number,
-    min: 0
+  scheduling: {
+    isScheduled: {
+      type: Boolean,
+      default: false
+    },
+    scheduledFor: {
+      type: Date
+    },
+    priority: {
+      type: String,
+      enum: ['low', 'normal', 'high'],
+      default: 'normal'
+    }
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
 });
 
-// Индексы для быстрого поиска
-postSchema.index({ accountId: 1, status: 1 });
-postSchema.index({ accountId: 1, createdAt: -1 });
-postSchema.index({ scheduledFor: 1, status: 1 });
-postSchema.index({ publishedAt: -1 });
+// Индексы для оптимизации запросов
+PostSchema.index({ accountId: 1, status: 1 });
+PostSchema.index({ createdBy: 1, createdAt: -1 });
+PostSchema.index({ status: 1, scheduledAt: 1 });
+PostSchema.index({ 'scheduling.isScheduled': 1, 'scheduling.scheduledFor': 1 });
 
-// Виртуальное поле для успешности публикации
-postSchema.virtual('isSuccess').get(function() {
+// Виртуальные поля
+PostSchema.virtual('isSuccess').get(function() {
   return (this as any).status === 'published';
 });
 
+PostSchema.virtual('account', {
+  ref: 'Account',
+  localField: 'accountId',
+  foreignField: '_id',
+  justOne: true
+});
+
+PostSchema.virtual('creator', {
+  ref: 'User',
+  localField: 'createdBy',
+  foreignField: '_id',
+  justOne: true
+});
+
 // Методы экземпляра
-postSchema.methods.markAsPublished = function(instagramUrl?: string, instagramId?: string) {
+PostSchema.methods.markAsPublished = async function(instagramUrl?: string): Promise<void> {
   this.status = 'published';
   this.publishedAt = new Date();
-  this.instagramUrl = instagramUrl;
-  this.instagramId = instagramId;
   this.error = undefined;
-  this.errorType = undefined;
-  return this.save();
+  if (instagramUrl) {
+    this.instagramUrl = instagramUrl;
+  }
+  await this.save();
 };
 
-postSchema.methods.markAsFailed = function(error: string, errorType?: string) {
+PostSchema.methods.markAsFailed = async function(error: string): Promise<void> {
   this.status = 'failed';
   this.error = error;
-  this.errorType = errorType;
-  this.retryCount += 1;
-  return this.save();
+  this.incrementAttempt(error);
+  await this.save();
 };
 
-postSchema.methods.canRetry = function(): boolean {
-  return this.retryCount < 3 && this.status === 'failed' && this.errorType !== 'banned';
+PostSchema.methods.incrementAttempt = async function(error?: string): Promise<void> {
+  this.attempts.count += 1;
+  this.attempts.lastAttempt = new Date();
+  if (error) {
+    this.attempts.errors.push(error);
+    // Ограничиваем количество сохраняемых ошибок
+    if (this.attempts.errors.length > 10) {
+      this.attempts.errors = this.attempts.errors.slice(-10);
+    }
+  }
 };
 
-export const Post = model<IPost>('Post', postSchema); 
+// Middleware для автоматической установки scheduling.isScheduled
+PostSchema.pre('save', function(next) {
+  if (this.scheduledAt) {
+    this.scheduling.isScheduled = true;
+    this.scheduling.scheduledFor = this.scheduledAt;
+  } else {
+    this.scheduling.isScheduled = false;
+    this.scheduling.scheduledFor = undefined;
+  }
+  next();
+});
+
+// Middleware для валидации
+PostSchema.pre('save', function(next) {
+  // Если пост запланирован, дата должна быть в будущем
+  if (this.scheduling.isScheduled && this.scheduling.scheduledFor) {
+    if (this.scheduling.scheduledFor <= new Date()) {
+      return next(new Error('Scheduled date must be in the future'));
+    }
+  }
+  
+  // Если пост опубликован, должна быть дата публикации
+  if (this.status === 'published' && !this.publishedAt) {
+    this.publishedAt = new Date();
+  }
+  
+  next();
+});
+
+// Статические методы
+PostSchema.statics.getScheduledPosts = function() {
+  return this.find({
+    status: 'scheduled',
+    'scheduling.isScheduled': true,
+    'scheduling.scheduledFor': { $lte: new Date() }
+  }).populate('accountId');
+};
+
+PostSchema.statics.getPostsByAccount = function(accountId: string, status?: string) {
+  const query: any = { accountId };
+  if (status) {
+    query.status = status;
+  }
+  return this.find(query).sort({ createdAt: -1 });
+};
+
+PostSchema.statics.getPostsStats = function(userId?: string) {
+  const matchStage: any = {};
+  if (userId) {
+    matchStage.createdBy = new mongoose.Types.ObjectId(userId);
+  }
+  
+  return this.aggregate([
+    { $match: matchStage },
+    {
+      $group: {
+        _id: '$status',
+        count: { $sum: 1 }
+      }
+    }
+  ]);
+};
+
+export const Post = mongoose.model<IPost>('Post', PostSchema); 

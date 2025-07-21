@@ -7,24 +7,21 @@ const router = Router();
 // Все роуты требуют авторизации
 router.use(authenticateToken);
 
-// Управление системой автоматизации
-router.post('/start', AutomationController.startSystem);
-router.post('/stop', AutomationController.stopSystem);
-router.post('/restart', AutomationController.restartSystem);
-router.get('/status', AutomationController.getSystemStatus);
-router.get('/stats', AutomationController.getStats);
+// Статус и мониторинг
+router.get('/status', AutomationController.getStatus);
+router.get('/logs', AutomationController.getLogs);
+router.get('/queue', AutomationController.getQueue);
 
-// Очередь публикаций
-router.get('/queue', AutomationController.getPublicationQueue);
-router.post('/accounts/:accountId/publish-now', AutomationController.publishNow);
-router.delete('/accounts/:accountId/queue', AutomationController.clearAccountQueue);
-
-// Real-time мониторинг
-router.get('/events', AutomationController.getSystemEvents);
-
-// Настройки и логи
+// Настройки
 router.get('/settings', AutomationController.getSettings);
 router.put('/settings', AutomationController.updateSettings);
-router.get('/logs', AutomationController.getLogs);
+
+// Управление автоматизацией
+router.post('/start', AutomationController.start);
+router.post('/stop', AutomationController.stop);
+router.post('/restart', AutomationController.restart);
+
+// Управление очередью
+router.delete('/accounts/:accountId/queue', AutomationController.clearAccountQueue);
 
 export default router; 

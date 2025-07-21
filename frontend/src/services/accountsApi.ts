@@ -1,25 +1,5 @@
-import axios from 'axios';
-
-const API_BASE_URL = process.env.REACT_APP_API_URL || 
-  (typeof window !== 'undefined' && window.location.hostname.includes('onrender.com') 
-    ? `https://${window.location.hostname}/api`
-    : 'http://localhost:5000/api');
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-// Добавляем токен аутентификации к каждому запросу
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+// Используем централизованный API клиент
+import { api } from './api';
 
 export interface Account {
   id: string;
@@ -38,7 +18,7 @@ export const accountsApi = {
   getAccounts: async (): Promise<Account[]> => {
     try {
       const response = await api.get('/accounts');
-      return response.data;
+      return response.data.data?.accounts || [];
     } catch (error) {
       console.error('Error fetching accounts:', error);
       return [];
