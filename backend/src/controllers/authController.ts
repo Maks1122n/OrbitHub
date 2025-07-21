@@ -7,8 +7,10 @@ import { AuthRequest } from '../middleware/auth';
 export class AuthController {
   // Логин
   static async login(req: Request, res: Response): Promise<void> {
+    console.log('🔑 AUTH: Login attempt started');
     try {
       const { email, password } = req.body;
+      console.log('🔑 AUTH: Login for email:', email);
 
       // Находим пользователя
       const user = await User.findOne({ email, isActive: true });
@@ -57,6 +59,7 @@ export class AuthController {
         }
       });
     } catch (error) {
+      console.log('🔑 AUTH ERROR:', error);
       logger.error('Login error:', error);
       res.status(500).json({
         success: false,

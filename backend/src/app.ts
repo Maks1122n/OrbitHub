@@ -34,6 +34,7 @@ const app = express();
 // Инициализация при старте  
 const initializeApp = async () => {
   try {
+    console.log('🟢 initializeApp started');
     logger.info('🚀 Starting OrbitHub initialization...');
     
     // Подключение к базе данных
@@ -61,14 +62,19 @@ const initializeApp = async () => {
       logger.warn('⚠️ AdsPower initialization failed (expected in cloud):', error);
     }
     
+    console.log('✅ initializeApp completed successfully');
     logger.info('✅ Application initialization completed');
   } catch (error) {
+    console.log('❌ initializeApp failed:', error);
     logger.error('❌ Application initialization failed:', error);
     // Не завершаем процесс, чтобы можно было диагностировать
   }
 };
 
+// Запуск инициализации
+console.log('🟡 Starting app initialization...');
 initializeApp();
+console.log('🟡 App initialization called...');
 
 // Middleware
 app.use(compression()); // Сжатие ответов
@@ -192,7 +198,9 @@ app.use(errorHandler);
 
 const PORT = config.port;
 
+console.log(`🟡 About to start server on port ${PORT}...`);
 app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 SERVER STARTED on port ${PORT}`);
   logger.info(`🚀 OrbitHub server running on port ${PORT} in ${config.nodeEnv} mode`);
   logger.info(`📊 Health check: http://localhost:${PORT}/health`);
   if (config.nodeEnv === 'production') {
