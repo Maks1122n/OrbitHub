@@ -13,6 +13,7 @@ export interface AuthRequest extends Request {
   body: any;
   query: any;
   headers: any;
+  file?: Express.Multer.File; // Для multer файлов
 }
 
 export const authenticateToken = async (
