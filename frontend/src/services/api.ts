@@ -1,6 +1,22 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// Автоматическое определение API URL
+const getApiBaseUrl = () => {
+  // Если есть переменная окружения - используем её
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  
+  // Если на продакшене (orbithub.onrender.com) - используем тот же домен
+  if (window.location.hostname.includes('orbithub.onrender.com')) {
+    return `${window.location.protocol}//${window.location.host}/api`;
+  }
+  
+  // Локальная разработка
+  return 'http://localhost:5000/api';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 class ApiClient {
   private axiosInstance: AxiosInstance;
