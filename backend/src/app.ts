@@ -23,6 +23,8 @@ import dropboxRoutes from './routes/dropbox';
 import instagramRoutes from './routes/instagram';
 import automationRoutes from './routes/automation';
 import postsRoutes from './routes/posts';
+import dashboardRoutes from './routes/dashboard';
+import logsRoutes from './routes/logs';
 
 // Создание папок
 const requiredDirs = ['logs', 'uploads', 'temp', 'cache', 'cache/dropbox', 'cache/instagram'];
@@ -196,6 +198,8 @@ app.use('/api/posts', postsRoutes);
 app.use('/api/dropbox', dropboxRoutes);
 app.use('/api/instagram', instagramRoutes);
 app.use('/api/automation', automationRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/logs', logsRoutes);
 console.log('✅ API routes configured');
 
 // В продакшене все неизвестные роуты отправляем на фронтенд

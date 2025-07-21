@@ -1,346 +1,248 @@
-import { Request, Response, NextFunction } from 'express';
+import { Response } from 'express';
+import { AuthRequest } from '../middleware/auth';
 import { Account } from '../models/Account';
 import { Post } from '../models/Post';
-import { User } from '../models/User';
-import { asyncHandler } from '../middleware/errorHandler';
+import logger from '../utils/logger';
 
-// Общая статистика для дашборда
-export const getDashboardStats = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-  // Общие счетчики
-  const totalAccounts = await Account.countDocuments();
-  const activeAccounts = await Account.countDocuments({ status: 'active' });
-  const runningAccounts = await Account.countDocuments({ isRunning: true });
-  const totalPosts = await Post.countDocuments();
-  const publishedPosts = await Post.countDocuments({ status: 'published' });
+export class DashboardController {
+  // Получение общей статистики для дашборда
+  static async getStats(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user!.userId;
 
-  // Статистика за последние 24 часа
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
+      // Получаем статистику аккаунтов
+      const totalAccounts = await Account.countDocuments({ userId });
+      const activeAccounts = await Account.countDocuments({ 
+        userId, 
+        status: { $in: ['active', 'running'] } 
+      });
+      const runningAccounts = await Account.countDocuments({ 
+        userId, 
+        isRunning: true 
+      });
+      const accountsWithProblems = await Account.countDocuments({ 
+        userId, 
+        status: { $in: ['error', 'banned'] } 
+      });
 
-  const postsToday = await Post.countDocuments({
-    publishedAt: { $gte: yesterday }
-  });
+      // Получаем статистику постов за сегодня
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
 
-  // Статистика по статусам аккаунтов
-  const accountStatusStats = await Account.aggregate([
-    {
-      $group: {
-        _id: '$status',
-        count: { $sum: 1 }
-      }
-    }
-  ]);
+      const postsToday = await Post.countDocuments({
+        createdBy: userId,
+        createdAt: { $gte: today, $lt: tomorrow }
+      });
 
-  // Статистика по статусам постов
-  const postStatusStats = await Post.aggregate([
-    {
-      $group: {
-        _id: '$status',
-        count: { $sum: 1 }
-      }
-    }
-  ]);
+      const scheduledPosts = await Post.countDocuments({
+        createdBy: userId,
+        status: 'scheduled',
+        scheduledAt: { $gte: new Date() }
+      });
 
-  // Активность за последние 7 дней
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-  const weeklyActivity = await Post.aggregate([
-    {
-      $match: {
-        publishedAt: { $gte: sevenDaysAgo }
-      }
-    },
-    {
-      $group: {
-        _id: {
-          $dateToString: { format: '%Y-%m-%d', date: '$publishedAt' }
-        },
-        count: { $sum: 1 }
-      }
-    },
-    { $sort: { _id: 1 } }
-  ]);
-
-  // Топ аккаунты по количеству публикаций
-  const topAccounts = await Post.aggregate([
-    {
-      $match: {
+      const publishedToday = await Post.countDocuments({
+        createdBy: userId,
         status: 'published',
-        publishedAt: { $gte: sevenDaysAgo }
-      }
-    },
-    {
-      $group: {
-        _id: '$accountId',
-        postCount: { $sum: 1 }
-      }
-    },
-    {
-      $lookup: {
-        from: 'accounts',
-        localField: '_id',
-        foreignField: '_id',
-        as: 'account'
-      }
-    },
-    {
-      $unwind: '$account'
-    },
-    {
-      $project: {
-        username: '$account.username',
-        postCount: 1,
-        status: '$account.status'
-      }
-    },
-    { $sort: { postCount: -1 } },
-    { $limit: 10 }
-  ]);
+        publishedAt: { $gte: today, $lt: tomorrow }
+      });
 
-  // Недавние ошибки
-  const recentErrors = await Post.find({
-    status: 'failed',
-    createdAt: { $gte: sevenDaysAgo }
-  })
-    .populate('accountId', 'username')
-    .sort({ createdAt: -1 })
-    .limit(10)
-    .select('accountId error createdAt videoFileName');
-
-  res.json({
-    success: true,
-    data: {
-      overview: {
-        totalAccounts,
-        activeAccounts,
-        runningAccounts,
-        totalPosts,
-        publishedPosts,
-        postsToday,
-        successRate: totalPosts > 0 ? Math.round((publishedPosts / totalPosts) * 100) : 0
-      },
-      accountStatusStats,
-      postStatusStats,
-      weeklyActivity,
-      topAccounts,
-      recentErrors
-    }
-  });
-});
-
-// Статистика производительности системы
-export const getSystemStats = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-  // Статистика по дням за последний месяц
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-  const monthlyStats = await Post.aggregate([
-    {
-      $match: {
-        createdAt: { $gte: thirtyDaysAgo }
-      }
-    },
-    {
-      $group: {
-        _id: {
-          date: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
-          status: '$status'
-        },
-        count: { $sum: 1 }
-      }
-    },
-    {
-      $group: {
-        _id: '$_id.date',
-        statuses: {
-          $push: {
-            status: '$_id.status',
-            count: '$count'
-          }
-        },
-        total: { $sum: '$count' }
-      }
-    },
-    { $sort: { _id: 1 } }
-  ]);
-
-  // Средняя частота публикаций по аккаунтам
-  const accountPerformance = await Account.aggregate([
-    {
-      $lookup: {
-        from: 'posts',
-        localField: '_id',
-        foreignField: 'accountId',
-        as: 'posts'
-      }
-    },
-    {
-      $project: {
-        username: 1,
-        status: 1,
-        isRunning: 1,
-        maxPostsPerDay: 1,
-        postsToday: 1,
-        totalPosts: { $size: '$posts' },
-        publishedPosts: {
-          $size: {
-            $filter: {
-              input: '$posts',
-              cond: { $eq: ['$$item.status', 'published'] }
-            }
-          }
-        },
-        lastActivity: 1,
-        createdAt: 1
-      }
-    },
-    {
-      $addFields: {
-        successRate: {
-          $cond: [
-            { $gt: ['$totalPosts', 0] },
-            { $multiply: [{ $divide: ['$publishedPosts', '$totalPosts'] }, 100] },
-            0
-          ]
-        },
-        daysActive: {
-          $divide: [
-            { $subtract: [new Date(), '$createdAt'] },
-            1000 * 60 * 60 * 24
-          ]
-        }
-      }
-    },
-    {
-      $addFields: {
-        avgPostsPerDay: {
-          $cond: [
-            { $gt: ['$daysActive', 0] },
-            { $divide: ['$publishedPosts', '$daysActive'] },
-            0
-          ]
-        }
-      }
-    },
-    { $sort: { avgPostsPerDay: -1 } }
-  ]);
-
-  // Статистика ошибок
-  const errorStats = await Post.aggregate([
-    {
-      $match: {
+      const failedToday = await Post.countDocuments({
+        createdBy: userId,
         status: 'failed',
-        createdAt: { $gte: thirtyDaysAgo }
-      }
-    },
-    {
-      $group: {
-        _id: '$error',
-        count: { $sum: 1 },
-        accounts: { $addToSet: '$accountId' }
-      }
-    },
-    {
-      $addFields: {
-        affectedAccounts: { $size: '$accounts' }
-      }
-    },
-    { $sort: { count: -1 } },
-    { $limit: 10 }
-  ]);
+        updatedAt: { $gte: today, $lt: tomorrow }
+      });
 
-  res.json({
-    success: true,
-    data: {
-      monthlyStats,
-      accountPerformance,
-      errorStats
+      // Статистика автоматизации (простая реализация)
+      const automationUptime = Date.now() - today.getTime(); // Время с начала дня
+      const isAutomationRunning = runningAccounts > 0;
+      const activeJobs = runningAccounts; // Пока что приравниваем к количеству работающих аккаунтов
+
+      // Состояние системы
+      let systemStatus: 'healthy' | 'warning' | 'error' = 'healthy';
+      
+      if (accountsWithProblems > 0) {
+        systemStatus = 'warning';
+      }
+      if (accountsWithProblems >= totalAccounts / 2) {
+        systemStatus = 'error';
+      }
+      if (totalAccounts === 0) {
+        systemStatus = 'warning';
+      }
+
+      const stats = {
+        accounts: {
+          total: totalAccounts,
+          active: activeAccounts,
+          running: runningAccounts,
+          withProblems: accountsWithProblems
+        },
+        posts: {
+          totalToday: postsToday,
+          scheduled: scheduledPosts,
+          published: publishedToday,
+          failed: failedToday
+        },
+        automation: {
+          isRunning: isAutomationRunning,
+          uptime: automationUptime,
+          activeJobs: activeJobs,
+          lastActivity: new Date().toISOString()
+        },
+        system: {
+          status: systemStatus,
+          database: true, // Если дошли до этого места, база работает
+          adspower: false, // TODO: добавить проверку AdsPower
+          dropbox: false   // TODO: добавить проверку Dropbox
+        }
+      };
+
+      res.json({
+        success: true,
+        data: stats
+      });
+
+    } catch (error) {
+      logger.error('Dashboard stats error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Ошибка получения статистики'
+      });
     }
-  });
-});
+  }
 
-// Уведомления и алерты
-export const getAlerts = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-  const alerts = [];
+  // Получение последней активности
+  static async getRecentActivity(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user!.userId;
+      const limit = parseInt(req.query.limit as string) || 10;
 
-  // Аккаунты с ошибками
-  const errorAccounts = await Account.find({ status: 'error' }).select('username lastActivity');
-  errorAccounts.forEach(account => {
-    alerts.push({
-      type: 'error',
-      severity: 'high',
-      message: `Account ${account.username} has errors`,
-      accountId: account._id,
-      timestamp: account.lastActivity || account.updatedAt
-    });
-  });
+      // Получаем последние посты и их статусы
+      const recentPosts = await Post.find({ createdBy: userId })
+        .populate('accountId', 'username')
+        .sort({ updatedAt: -1 })
+        .limit(limit)
+        .lean();
 
-  // Заблокированные аккаунты
-  const bannedAccounts = await Account.find({ status: 'banned' }).select('username lastActivity');
-  bannedAccounts.forEach(account => {
-    alerts.push({
-      type: 'banned',
-      severity: 'high',
-      message: `Account ${account.username} is banned`,
-      accountId: account._id,
-      timestamp: account.lastActivity || account.updatedAt
-    });
-  });
+      const activities = recentPosts.map(post => {
+        let type: 'success' | 'error' | 'info' | 'warning' = 'info';
+        let message = '';
 
-  // Аккаунты без активности больше 24 часов
-  const dayAgo = new Date();
-  dayAgo.setDate(dayAgo.getDate() - 1);
+        const account = post.accountId as any;
+        const accountName = account?.username || 'unknown';
 
-  const inactiveAccounts = await Account.find({
-    isRunning: true,
-    lastActivity: { $lt: dayAgo }
-  }).select('username lastActivity');
+        switch (post.status) {
+          case 'published':
+            type = 'success';
+            message = `@${accountName} успешно опубликовал пост`;
+            break;
+          case 'failed':
+            type = 'error';
+            message = `@${accountName} не удалось опубликовать: ${post.error || 'неизвестная ошибка'}`;
+            break;
+          case 'scheduled':
+            type = 'info';
+            message = `@${accountName} запланировал пост на ${new Date(post.scheduledAt!).toLocaleString('ru-RU')}`;
+            break;
+          default:
+            type = 'info';
+            message = `@${accountName} создал новый пост`;
+        }
 
-  inactiveAccounts.forEach(account => {
-    alerts.push({
-      type: 'inactive',
-      severity: 'medium',
-      message: `Account ${account.username} has no activity for 24+ hours`,
-      accountId: account._id,
-      timestamp: account.lastActivity
-    });
-  });
+        return {
+          id: post._id.toString(),
+          type,
+          message,
+          timestamp: post.updatedAt,
+          accountId: post.accountId.toString(),
+          accountUsername: accountName
+        };
+      });
 
-  // Аккаунты достигшие лимита постов
-  const limitReachedAccounts = await Account.find({
-    $expr: { $gte: ['$postsToday', '$maxPostsPerDay'] }
-  }).select('username postsToday maxPostsPerDay');
+      res.json({
+        success: true,
+        data: {
+          logs: activities
+        }
+      });
 
-  limitReachedAccounts.forEach(account => {
-    alerts.push({
-      type: 'limit_reached',
-      severity: 'low',
-      message: `Account ${account.username} reached daily post limit (${account.postsToday}/${account.maxPostsPerDay})`,
-      accountId: account._id,
-      timestamp: new Date()
-    });
-  });
-
-  // Сортируем по важности и времени
-  alerts.sort((a, b) => {
-    const severityOrder = { high: 3, medium: 2, low: 1 };
-    if (severityOrder[a.severity] !== severityOrder[b.severity]) {
-      return severityOrder[b.severity] - severityOrder[a.severity];
+    } catch (error) {
+      logger.error('Recent activity error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Ошибка получения активности'
+      });
     }
-    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
-  });
+  }
 
-  res.json({
-    success: true,
-    data: {
-      alerts: alerts.slice(0, 50), // Лимитируем 50 алертами
-      counts: {
-        total: alerts.length,
-        high: alerts.filter(a => a.severity === 'high').length,
-        medium: alerts.filter(a => a.severity === 'medium').length,
-        low: alerts.filter(a => a.severity === 'low').length
-      }
+  // Получение системной информации
+  static async getSystemInfo(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const systemInfo = {
+        version: '1.0.0',
+        uptime: process.uptime() * 1000, // в миллисекундах
+        nodeVersion: process.version,
+        platform: process.platform,
+        memory: process.memoryUsage(),
+        timestamp: new Date().toISOString()
+      };
+
+      res.json({
+        success: true,
+        data: systemInfo
+      });
+
+    } catch (error) {
+      logger.error('System info error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Ошибка получения системной информации'
+      });
     }
-  });
-}); 
+  }
+
+  // Проверка здоровья системы
+  static async getHealthCheck(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      // Проверяем подключение к базе данных
+      const dbCheck = await Account.findOne().limit(1);
+      
+      const health = {
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        services: {
+          database: !!dbCheck || true, // true если запрос прошел успешно
+          api: true, // если дошли до этого места, API работает
+          memory: process.memoryUsage().heapUsed / process.memoryUsage().heapTotal < 0.9
+        }
+      };
+
+      // Определяем общий статус
+      const allServicesHealthy = Object.values(health.services).every(status => status === true);
+      health.status = allServicesHealthy ? 'healthy' : 'warning';
+
+      res.json({
+        success: true,
+        data: health
+      });
+
+    } catch (error) {
+      logger.error('Health check error:', error);
+      res.status(503).json({
+        success: false,
+        error: 'Система недоступна',
+        data: {
+          status: 'error',
+          timestamp: new Date().toISOString(),
+          services: {
+            database: false,
+            api: true,
+            memory: false
+          }
+        }
+      });
+    }
+  }
+} 

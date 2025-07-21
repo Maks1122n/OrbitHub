@@ -7,9 +7,7 @@ const router = Router();
 // Все маршруты требуют авторизации
 router.use(authenticateToken);
 
-// Основные маршруты дашборда
-router.get('/stats', DashboardController.getStats);
-router.get('/health', DashboardController.getHealthCheck);
-router.get('/system', DashboardController.getSystemInfo);
+// Маршруты для логов и активности
+router.get('/recent', DashboardController.getRecentActivity);
 
 export default router; 
