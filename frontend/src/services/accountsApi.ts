@@ -2,15 +2,26 @@
 import { api } from './api';
 
 export interface Account {
-  id: string;
+  _id: string;
   username: string;
-  email: string;
-  status: 'active' | 'inactive' | 'banned' | 'error';
+  email?: string;
+  displayName: string;
+  status: 'active' | 'inactive' | 'banned' | 'error' | 'pending';
   isRunning: boolean;
-  lastActivity: string;
-  postsCount: number;
-  followersCount: number;
+  lastActivity?: string;
+  maxPostsPerDay: number;
+  postsToday: number;
   adsPowerProfileId?: string;
+  createdAt: string;
+  updatedAt: string;
+  stats: {
+    totalPosts: number;
+    successfulPosts: number;
+    failedPosts: number;
+    lastSuccessfulPost?: string;
+    lastError?: string;
+    avgPostsPerDay: number;
+  };
 }
 
 export const accountsApi = {

@@ -274,7 +274,7 @@ export const AccountsPage: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-gray-700">
                   {accounts.map((account) => (
-                    <tr key={account.id} className="hover:bg-gray-800">
+                    <tr key={account._id} className="hover:bg-gray-800">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <div className="flex-shrink-0 h-10 w-10">
@@ -286,7 +286,7 @@ export const AccountsPage: React.FC = () => {
                           </div>
                           <div className="ml-4">
                             <div className="text-sm font-medium text-white">@{account.username}</div>
-                            <div className="text-sm text-gray-400">{account.email}</div>
+                            <div className="text-sm text-gray-400">{account.email || account.displayName}</div>
                           </div>
                         </div>
                       </td>
@@ -303,11 +303,11 @@ export const AccountsPage: React.FC = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
-                        <div>Посты: {account.postsCount}</div>
-                        <div>Подписчики: {account.followersCount.toLocaleString()}</div>
+                        <div>Посты: {account.stats.totalPosts}</div>
+                        <div>Сегодня: {account.postsToday}/{account.maxPostsPerDay}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
-                        {account.lastActivity}
+                        {account.lastActivity ? new Date(account.lastActivity).toLocaleString('ru-RU') : 'Никогда'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-end space-x-2">
@@ -315,7 +315,7 @@ export const AccountsPage: React.FC = () => {
                             size="sm"
                             variant={account.isRunning ? 'danger' : 'secondary'}
                             onClick={() => toggleAccountMutation.mutate({
-                              accountId: account.id,
+                              accountId: account._id,
                               isRunning: !account.isRunning
                             })}
                             loading={toggleAccountMutation.isLoading}
@@ -327,7 +327,7 @@ export const AccountsPage: React.FC = () => {
                             variant="ghost"
                             onClick={() => {
                               if (confirm('Вы уверены что хотите удалить этот аккаунт?')) {
-                                deleteAccountMutation.mutate(account.id);
+                                deleteAccountMutation.mutate(account._id);
                               }
                             }}
                           >

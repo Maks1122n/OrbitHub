@@ -5,9 +5,8 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import toast from 'react-hot-toast';
 
-
-
 import { postsApi, Post } from '../services/postsApi';
+import { accountsApi } from '../services/accountsApi';
 
 export const PostsPage: React.FC = () => {
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -29,6 +28,12 @@ export const PostsPage: React.FC = () => {
     {
       refetchInterval: 30000 // Обновляем каждые 30 секунд
     }
+  );
+
+  // Получение списка аккаунтов для dropdown
+  const { data: accounts = [] } = useQuery(
+    'accounts',
+    accountsApi.getAccounts
   );
 
   // Создание поста
@@ -135,6 +140,9 @@ export const PostsPage: React.FC = () => {
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString('ru-RU');
   };
+
+  // Получаем selected account для отображения
+  const selectedAccount = accounts.find(acc => acc._id === newPost.accountId);
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -260,8 +268,11 @@ export const PostsPage: React.FC = () => {
                     required
                   >
                     <option value="">Выберите аккаунт</option>
-                    {/* TODO: Заполнить реальными аккаунтами */}
-                    <option value="account1">@example_account</option>
+                    {accounts.map(account => (
+                      <option key={account._id} value={account._id}>
+                        @{account.username} - {account.displayName}
+                      </option>
+                    ))}
                   </select>
 
                   <Input
@@ -308,7 +319,7 @@ export const PostsPage: React.FC = () => {
                     )}
                     
                     <div className="text-white">
-                      <div className="font-medium mb-2">@{newPost.accountId || 'account'}</div>
+                      <div className="font-medium mb-2">@{selectedAccount?.username || 'account'}</div>
                       <div className="text-sm whitespace-pre-wrap">
                         {newPost.content || 'Текст поста появится здесь...'}
                       </div>
@@ -360,7 +371,7 @@ export const PostsPage: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {posts.map((post) => (
                 <div
-                  key={post.id}
+                  key={post._id}
                   className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden hover:border-gray-600 transition-colors"
                 >
                   {post.mediaUrl && (
@@ -383,7 +394,7 @@ export const PostsPage: React.FC = () => {
                   
                   <div className="p-4">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm text-gray-400">@{post.accountUsername}</span>
+                      <span className="text-sm text-gray-400">@{post.account?.username || 'unknown'}</span>
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(post.status)}`}>
                         {getStatusText(post.status)}
                       </span>
@@ -399,9 +410,9 @@ export const PostsPage: React.FC = () => {
                     
                     <div className="text-xs text-gray-400 mb-4">
                       {post.status === 'scheduled' ? (
-                        <>Публикация: {formatDate(post.scheduledAt)}</>
+                        <>Публикация: {formatDate(post.scheduledAt || post.createdAt)}</>
                       ) : post.status === 'published' ? (
-                        <>Опубликован: {formatDate(post.scheduledAt)}</>
+                        <>Опубликован: {formatDate(post.publishedAt || post.createdAt)}</>
                       ) : (
                         <>Создан: {formatDate(post.createdAt)}</>
                       )}
@@ -411,7 +422,7 @@ export const PostsPage: React.FC = () => {
                       {post.status === 'scheduled' && (
                         <Button
                           size="sm"
-                          onClick={() => publishNowMutation.mutate(post.id)}
+                          onClick={() => publishNowMutation.mutate(post._id)}
                           loading={publishNowMutation.isLoading}
                         >
                           Опубликовать сейчас
@@ -422,7 +433,7 @@ export const PostsPage: React.FC = () => {
                         variant="ghost"
                         onClick={() => {
                           if (confirm('Вы уверены что хотите удалить этот пост?')) {
-                            deletePostMutation.mutate(post.id);
+                            deletePostMutation.mutate(post._id);
                           }
                         }}
                       >

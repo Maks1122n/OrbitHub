@@ -2,16 +2,42 @@
 import { api } from './api';
 
 export interface Post {
-  id: string;
+  _id: string;
   title: string;
   content: string;
   mediaUrl?: string;
   mediaType: 'image' | 'video';
-  scheduledAt: string;
+  scheduledAt?: string;
   status: 'scheduled' | 'published' | 'failed' | 'draft';
   accountId: string;
-  accountUsername: string;
+  createdBy: string;
+  error?: string;
+  instagramUrl?: string;
+  publishedAt?: string;
   createdAt: string;
+  updatedAt: string;
+  metadata: {
+    fileSize?: number;
+    duration?: number;
+    videoPath?: string;
+    thumbnailPath?: string;
+  };
+  attempts: {
+    count: number;
+    lastAttempt?: string;
+    errors: string[];
+  };
+  scheduling: {
+    isScheduled: boolean;
+    scheduledFor?: string;
+    priority: 'low' | 'normal' | 'high';
+  };
+  // Виртуальные поля от populate
+  account?: {
+    _id: string;
+    username: string;
+    status: string;
+  };
 }
 
 export const postsApi = {
