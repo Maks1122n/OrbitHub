@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { adsPowerApi } from '../services/adsPowerApi';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -36,13 +37,13 @@ export const AdsPowerTest: React.FC = () => {
     (data: { name: string }) => adsPowerApi.createTestProfile({ name: data.name }),
     {
       onSuccess: (response) => {
-        toast.success('Test profile created successfully!');
+        toast.success('Тестовый профиль успешно создан!');
         setTestProfileName('');
         queryClient.invalidateQueries('adspower-profiles');
         setSelectedProfileId(response.data.data.profileId);
       },
       onError: (error: any) => {
-        toast.error(error.response?.data?.error || 'Failed to create profile');
+        toast.error(error.response?.data?.error || 'Ошибка создания профиля');
       }
     }
   );
@@ -52,11 +53,11 @@ export const AdsPowerTest: React.FC = () => {
     (profileId: string) => adsPowerApi.startBrowser(profileId),
     {
       onSuccess: () => {
-        toast.success('Browser started successfully!');
+        toast.success('Браузер успешно запущен!');
         queryClient.invalidateQueries('adspower-profiles');
       },
       onError: (error: any) => {
-        toast.error(error.response?.data?.error || 'Failed to start browser');
+        toast.error(error.response?.data?.error || 'Ошибка запуска браузера');
       }
     }
   );
@@ -66,11 +67,11 @@ export const AdsPowerTest: React.FC = () => {
     (profileId: string) => adsPowerApi.stopBrowser(profileId),
     {
       onSuccess: () => {
-        toast.success('Browser stopped successfully!');
+        toast.success('Браузер успешно остановлен!');
         queryClient.invalidateQueries('adspower-profiles');
       },
       onError: (error: any) => {
-        toast.error(error.response?.data?.error || 'Failed to stop browser');
+        toast.error(error.response?.data?.error || 'Ошибка остановки браузера');
       }
     }
   );
@@ -80,12 +81,12 @@ export const AdsPowerTest: React.FC = () => {
     (profileId: string) => adsPowerApi.deleteProfile(profileId),
     {
       onSuccess: () => {
-        toast.success('Profile deleted successfully!');
+        toast.success('Профиль успешно удален!');
         queryClient.invalidateQueries('adspower-profiles');
         setSelectedProfileId('');
       },
       onError: (error: any) => {
-        toast.error(error.response?.data?.error || 'Failed to delete profile');
+        toast.error(error.response?.data?.error || 'Ошибка удаления профиля');
       }
     }
   );
@@ -95,11 +96,11 @@ export const AdsPowerTest: React.FC = () => {
     () => adsPowerApi.stopAllBrowsers(),
     {
       onSuccess: (response) => {
-        toast.success(`Stopped ${response.data.data.stoppedCount} browsers`);
+        toast.success(`Остановлено ${response.data.data.stoppedCount} браузеров`);
         queryClient.invalidateQueries('adspower-profiles');
       },
       onError: (error: any) => {
-        toast.error(error.response?.data?.error || 'Failed to stop browsers');
+        toast.error(error.response?.data?.error || 'Ошибка остановки браузеров');
       }
     }
   );
@@ -111,12 +112,25 @@ export const AdsPowerTest: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-900 text-white p-6">
       <div className="max-w-6xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">AdsPower Integration Test</h1>
-          <p className="text-gray-400">Test and verify AdsPower API connection and functionality</p>
+        {/* Навигация */}
+        <div className="mb-6">
+          <Link 
+            to="/" 
+            className="inline-flex items-center text-blue-400 hover:text-blue-300 transition-colors"
+          >
+            <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Вернуться на главную
+          </Link>
         </div>
 
-        {/* Connection Status */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold mb-2">Тестирование интеграции AdsPower</h1>
+          <p className="text-gray-400">Проверка и настройка подключения к API AdsPower</p>
+        </div>
+
+        {/* Статус подключения */}
         <Card className="mb-6">
           <div className="p-6">
             <div className="flex items-center justify-between mb-4">
@@ -124,7 +138,7 @@ export const AdsPowerTest: React.FC = () => {
                 <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                 </svg>
-                Connection Status
+                Статус подключения
               </h2>
               <Button
                 onClick={() => retestConnection()}
@@ -135,7 +149,7 @@ export const AdsPowerTest: React.FC = () => {
                 <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                Refresh
+                Обновить
               </Button>
             </div>
 
@@ -144,7 +158,7 @@ export const AdsPowerTest: React.FC = () => {
                 <svg className="h-5 w-5 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                Testing connection...
+                Проверка подключения...
               </div>
             ) : connectionData?.connected ? (
               <div className="space-y-2">
@@ -152,19 +166,19 @@ export const AdsPowerTest: React.FC = () => {
                   <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  Connected to AdsPower
+                  Подключено к AdsPower
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                   <div className="bg-gray-800 p-3 rounded-lg">
-                    <div className="text-gray-400">Version</div>
-                    <div className="font-mono">{connectionData.version || 'Unknown'}</div>
+                    <div className="text-gray-400">Версия</div>
+                    <div className="font-mono">{connectionData.version || 'Неизвестно'}</div>
                   </div>
                   <div className="bg-gray-800 p-3 rounded-lg">
-                    <div className="text-gray-400">Total Profiles</div>
+                    <div className="text-gray-400">Всего профилей</div>
                     <div className="font-mono">{connectionData.profilesCount || 0}</div>
                   </div>
                   <div className="bg-gray-800 p-3 rounded-lg">
-                    <div className="text-gray-400">Active Browsers</div>
+                    <div className="text-gray-400">Активных браузеров</div>
                     <div className="font-mono">{activeProfiles}</div>
                   </div>
                 </div>
@@ -175,7 +189,7 @@ export const AdsPowerTest: React.FC = () => {
                   <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  Connection failed
+                  Ошибка подключения
                 </div>
                 {connectionData?.error && (
                   <div className="text-sm text-gray-400 bg-gray-800 p-3 rounded">
@@ -183,7 +197,7 @@ export const AdsPowerTest: React.FC = () => {
                   </div>
                 )}
                 <div className="text-sm text-gray-400">
-                  Make sure AdsPower is running and accessible at: http://local.adspower.net:50325
+                  Убедитесь что AdsPower запущен и доступен по адресу: http://local.adspower.net:50325
                 </div>
               </div>
             )}
@@ -192,18 +206,18 @@ export const AdsPowerTest: React.FC = () => {
 
         {connectionData?.connected && (
           <>
-            {/* Create Test Profile */}
+            {/* Создание тестового профиля */}
             <Card className="mb-6">
               <div className="p-6">
                 <h2 className="text-xl font-semibold mb-4 flex items-center">
                   <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                   </svg>
-                  Create Test Profile
+                  Создание тестового профиля
                 </h2>
                 <div className="flex gap-4">
                   <Input
-                    placeholder="Profile name (optional)"
+                    placeholder="Имя профиля (опционально)"
                     value={testProfileName}
                     onChange={(e) => setTestProfileName(e.target.value)}
                     className="flex-1"
@@ -214,13 +228,13 @@ export const AdsPowerTest: React.FC = () => {
                     })}
                     loading={createProfileMutation.isLoading}
                   >
-                    Create Profile
+                    Создать профиль
                   </Button>
                 </div>
               </div>
             </Card>
 
-            {/* Profiles List */}
+            {/* Список профилей */}
             <Card>
               <div className="p-6">
                 <div className="flex items-center justify-between mb-6">
@@ -228,7 +242,7 @@ export const AdsPowerTest: React.FC = () => {
                     <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
-                    AdsPower Profiles ({profiles.length})
+                    Профили AdsPower ({profiles.length})
                   </h2>
                   <div className="flex gap-2">
                     <Button
@@ -242,7 +256,7 @@ export const AdsPowerTest: React.FC = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10h6v4H9V10z" />
                       </svg>
-                      Stop All ({activeProfiles})
+                      Остановить все ({activeProfiles})
                     </Button>
                     <Button
                       onClick={() => refetchProfiles()}
@@ -253,7 +267,7 @@ export const AdsPowerTest: React.FC = () => {
                       <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                       </svg>
-                      Refresh
+                      Обновить
                     </Button>
                   </div>
                 </div>
@@ -263,14 +277,14 @@ export const AdsPowerTest: React.FC = () => {
                     <svg className="h-8 w-8 animate-spin mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
-                    <p className="text-gray-400">Loading profiles...</p>
+                    <p className="text-gray-400">Загрузка профилей...</p>
                   </div>
                 ) : profiles.length === 0 ? (
                   <div className="text-center py-8 text-gray-400">
                     <svg className="h-12 w-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
-                    <p>No profiles found. Create a test profile to get started.</p>
+                    <p>Профили не найдены. Создайте тестовый профиль для начала работы.</p>
                   </div>
                 ) : (
                   <div className="grid gap-4">
@@ -295,7 +309,7 @@ export const AdsPowerTest: React.FC = () => {
                                     : 'bg-gray-500/20 text-gray-400'
                                 }`}
                               >
-                                {profile.browserStatus}
+                                {profile.browserStatus === 'Active' ? 'Активен' : 'Неактивен'}
                               </span>
                             </div>
                             <div className="text-sm text-gray-400 font-mono">
@@ -317,7 +331,7 @@ export const AdsPowerTest: React.FC = () => {
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10h6v4H9V10z" />
                                 </svg>
-                                Stop
+                                Остановить
                               </Button>
                             ) : (
                               <Button
@@ -331,13 +345,13 @@ export const AdsPowerTest: React.FC = () => {
                                 <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
-                                Start
+                                Запустить
                               </Button>
                             )}
                             <Button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (confirm('Are you sure you want to delete this profile?')) {
+                                if (confirm('Вы уверены что хотите удалить этот профиль?')) {
                                   deleteProfileMutation.mutate(profile.user_id);
                                 }
                               }}
