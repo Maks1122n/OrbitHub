@@ -4,7 +4,18 @@ import logger from '../utils/logger';
 
 export const connectDatabase = async (): Promise<void> => {
   try {
-    const conn = await mongoose.connect(config.mongoUri);
+    console.log('🔌 MongoDB URI:', config.mongoUri.replace(/:[^:@]+@/, ':***@')); // Скрыть пароль в логах
+    
+    const conn = await mongoose.connect(config.mongoUri, {
+      serverSelectionTimeoutMS: 10000, // 10 секунд на подключение
+      socketTimeoutMS: 45000, // 45 секунд на операции
+      bufferMaxEntries: 0, // Отключить буферизацию
+      maxPoolSize: 10, // Максимум 10 соединений
+      retryWrites: true,
+      authSource: 'admin'
+    });
+    
+    console.log('✅ MongoDB Connected:', conn.connection.host);
     logger.info(`MongoDB Connected: ${conn.connection.host}`);
     
     // Обработка событий подключения
@@ -24,6 +35,7 @@ export const connectDatabase = async (): Promise<void> => {
     });
 
   } catch (error) {
+    console.log('❌ Database connection failed:', error);
     logger.error('Database connection failed:', error);
     throw error;
   }
