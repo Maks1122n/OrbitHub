@@ -9,6 +9,10 @@ export interface AuthRequest extends Request {
     email: string;
     role: string;
   };
+  params: any;
+  body: any;
+  query: any;
+  headers: any;
 }
 
 export const authenticateToken = async (

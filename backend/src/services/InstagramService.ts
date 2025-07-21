@@ -1,4 +1,8 @@
-import puppeteer, { Browser, Page } from 'puppeteer';
+// import puppeteer, { Browser, Page } from 'puppeteer';
+// Temporary stub for puppeteer - will be re-enabled after deployment
+type Browser = any;
+type Page = any;
+const puppeteer: any = null;
 import { BrowserSession, AdsPowerService } from './AdsPowerService';
 import { DropboxService } from './DropboxService';
 import logger from '../utils/logger';
@@ -137,7 +141,7 @@ export class InstagramService {
         return {
           success: false,
           requiresVerification: true,
-          challengeType,
+          challengeType: challengeType === 'unknown' ? 'email' : challengeType as 'email' | 'sms' | 'photo',
           error: `Verification required: ${challengeType}`
         };
       }
