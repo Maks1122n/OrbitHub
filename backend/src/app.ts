@@ -4,6 +4,8 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import compression from 'compression';
 import path from 'path';
+
+console.log('🟡 App.ts starting - imports loaded');
 import { connectDatabase } from './config/database';
 import { config } from './config/env';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
@@ -39,18 +41,24 @@ const initializeApp = async () => {
     
     // Подключение к базе данных
     try {
+      console.log('🔌 Attempting database connection...');
       await connectDatabase();
+      console.log('✅ Database connected successfully');
       logger.info('✅ Database connected successfully');
     } catch (error) {
+      console.log('❌ Database connection failed:', error);
       logger.error('❌ Database connection failed:', error);
       // Продолжаем работу без БД для диагностики
     }
     
     // Создание админа по умолчанию
     try {
+      console.log('👤 Attempting to create default admin...');
       await createDefaultAdmin();
+      console.log('✅ Default admin created/verified');
       logger.info('✅ Default admin created/verified');
     } catch (error) {
+      console.log('⚠️ Default admin creation failed:', error);
       logger.warn('⚠️ Default admin creation failed:', error);
     }
     
@@ -172,13 +180,21 @@ app.get('/status', (req, res) => {
   });
 });
 
+// Middleware для отслеживания всех API запросов
+app.use('/api/*', (req, res, next) => {
+  console.log(`📥 API Request: ${req.method} ${req.originalUrl}`);
+  next();
+});
+
 // API Routes
+console.log('🔗 Setting up API routes...');
 app.use('/api/auth', authRoutes);
 app.use('/api/adspower', adsPowerRoutes);
 app.use('/api/accounts', accountRoutes);
 app.use('/api/dropbox', dropboxRoutes);
 app.use('/api/instagram', instagramRoutes);
 app.use('/api/automation', automationRoutes);
+console.log('✅ API routes configured');
 
 // В продакшене все неизвестные роуты отправляем на фронтенд
 if (config.nodeEnv === 'production') {
