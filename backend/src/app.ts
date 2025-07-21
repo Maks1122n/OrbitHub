@@ -2,28 +2,18 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import { createServer } from 'http';
-import { Server } from 'socket.io';
-
-// Импорты конфигурации и утилит
-import { config } from './config/env';
+import compression from 'compression';
+import path from 'path';
 import { connectDatabase } from './config/database';
-import logger from './utils/logger';
+import { config } from './config/env';
+import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { createDefaultAdmin } from './utils/createAdmin';
-import { initializeAdsPower, checkAdsPowerConnection } from './config/adspower';
+import { initializeAdsPower } from './config/adspower';
+import { getAutomationService } from './services/AutomationService';
+import logger from './utils/logger';
+import fs from 'fs';
 
-// Импорты middleware
-import { 
-  errorHandler, 
-  notFoundHandler, 
-  handleUncaughtException,
-  handleUnhandledRejection,
-  handleGracefulShutdown 
-} from './middleware/errorHandler';
-import { logUserActivity } from './middleware/auth';
-
-// Импорты маршрутов
-import apiRoutes from './routes';
+// Импорт роутов
 import authRoutes from './routes/auth';
 import adsPowerRoutes from './routes/adspower';
 import accountRoutes from './routes/accounts';
@@ -31,288 +21,192 @@ import dropboxRoutes from './routes/dropbox';
 import instagramRoutes from './routes/instagram';
 import automationRoutes from './routes/automation';
 
-// Импорты сервисов
-import { getAutomationService } from './services/AutomationService';
-
-class App {
-  public app: express.Application;
-  private server: any;
-  private io: Server;
-
-  constructor() {
-    this.app = express();
-    
-    // Инициализация
-    this.initializeErrorHandlers();
-    this.initializeMiddlewares();
-    this.initializeRoutes();
-    this.initializeErrorMiddleware();
-    this.createServer();
+// Создание папок
+const requiredDirs = ['logs', 'uploads', 'temp', 'cache', 'cache/dropbox', 'cache/instagram'];
+requiredDirs.forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
   }
+});
 
-  private initializeErrorHandlers(): void {
-    // Обработчики глобальных ошибок
-    handleUncaughtException();
-    handleUnhandledRejection();
-  }
+const app = express();
 
-  private initializeMiddlewares(): void {
-    // Безопасность
-    this.app.use(helmet({
-      contentSecurityPolicy: false, // Отключаем CSP для разработки
-    }));
-
-    // CORS
-    this.app.use(cors({
-      origin: config.nodeEnv === 'production' 
-        ? ['https://yourdomain.com'] // Замените на ваш домен
-        : ['http://localhost:3000', 'http://localhost:5173'], // React dev server
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization']
-    }));
-
-    // Парсинг JSON
-    this.app.use(express.json({ limit: '10mb' }));
-    this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-    // Логирование HTTP запросов
-    if (config.nodeEnv === 'development') {
-      this.app.use(morgan('dev'));
-    } else {
-      this.app.use(morgan('combined', {
-        stream: {
-          write: (message: string) => {
-            logger.info(message.trim());
-          }
-        }
-      }));
-    }
-
-    // Логирование активности пользователей
-    this.app.use(logUserActivity);
-
-    // Доверенный прокси (для получения реального IP)
-    this.app.set('trust proxy', 1);
-  }
-
-  private initializeRoutes(): void {
-    // Health check с проверкой AdsPower и Dropbox
-    this.app.get('/health', async (req, res) => {
-      try {
-        const adsPowerStatus = await checkAdsPowerConnection();
-        
-        let dropboxStatus = false;
-        let dropboxInfo = null;
-        try {
-          const { DropboxService } = await import('./services/DropboxService');
-          const dropboxService = DropboxService.getInstance();
-          dropboxStatus = await dropboxService.validateAccessToken();
-          if (dropboxStatus) {
-            const timeRemaining = dropboxService.getTokenTimeRemaining();
-            dropboxInfo = {
-              tokenExpiring: dropboxService.isTokenExpiringSoon(),
-              timeRemaining
-            };
-          }
-        } catch (error) {
-          // Dropbox service not initialized
-        }
-        
-        res.json({ 
-          status: 'OK', 
-          timestamp: new Date().toISOString(),
-          environment: config.nodeEnv,
-          services: {
-            database: 'connected',
-            adspower: adsPowerStatus ? 'connected' : 'disconnected',
-            dropbox: dropboxStatus ? 'connected' : 'disconnected'
-          },
-          dropboxInfo
-        });
-      } catch (error) {
-        res.status(500).json({
-          status: 'ERROR',
-          timestamp: new Date().toISOString(),
-          services: {
-            database: 'unknown',
-            adspower: 'error',
-            dropbox: 'error'
-          }
-        });
-      }
-    });
-
-    // Auth маршруты
-    this.app.use('/api/auth', authRoutes);
+// Инициализация при старте
+const initializeApp = async () => {
+  try {
+    await connectDatabase();
+    await createDefaultAdmin();
     
-    // AdsPower маршруты
-    this.app.use('/api/adspower', adsPowerRoutes);
-    
-    // Account маршруты
-    this.app.use('/api/accounts', accountRoutes);
-    
-    // Dropbox маршруты
-    this.app.use('/api/dropbox', dropboxRoutes);
-    
-    // Instagram маршруты
-    this.app.use('/api/instagram', instagramRoutes);
-    
-    // Automation маршруты
-    this.app.use('/api/automation', automationRoutes);
-    
-    // API маршруты
-    this.app.use('/api', apiRoutes);
-
-    // Статические файлы (если нужно)
-    this.app.use('/uploads', express.static('uploads'));
-
-    // Главная страница API
-    this.app.get('/', (req, res) => {
-      res.json({
-        success: true,
-        message: 'OrbitHub Server is running!',
-        version: '1.0.0',
-        environment: config.nodeEnv,
-        timestamp: new Date().toISOString(),
-        documentation: '/api',
-        health: '/health'
-      });
-    });
-  }
-
-  private initializeErrorMiddleware(): void {
-    // 404 обработчик для несуществующих маршрутов
-    this.app.use(notFoundHandler);
-
-    // Глобальный обработчик ошибок
-    this.app.use(errorHandler);
-  }
-
-  private createServer(): void {
-    // Создаем HTTP сервер
-    this.server = createServer(this.app);
-
-    // Инициализируем Socket.IO для реального времени
-    this.io = new Server(this.server, {
-      cors: {
-        origin: config.nodeEnv === 'production' 
-          ? ['https://yourdomain.com']
-          : ['http://localhost:3000', 'http://localhost:5173'],
-        methods: ['GET', 'POST'],
-        credentials: true
-      }
-    });
-
-    // Настраиваем Socket.IO события
-    this.initializeSocketIO();
-  }
-
-  private initializeSocketIO(): void {
-    this.io.on('connection', (socket) => {
-      logger.info(`Client connected: ${socket.id}`);
-
-      // Присоединение к комнате пользователя
-      socket.on('join-user', (userId: string) => {
-        socket.join(`user-${userId}`);
-        logger.info(`User ${userId} joined room`);
-      });
-
-      // Отключение
-      socket.on('disconnect', () => {
-        logger.info(`Client disconnected: ${socket.id}`);
-      });
-    });
-
-    // Делаем io доступным глобально для отправки уведомлений
-    global.io = this.io;
-  }
-
-  public async start(): Promise<void> {
+    // В продакшене попробуем подключиться к AdsPower, но не критично если не получится
     try {
-      // Подключаемся к базе данных
-      await connectDatabase();
-
-      // Создаем админа по умолчанию
-      await createDefaultAdmin();
-
-      // Инициализируем AdsPower
       await initializeAdsPower();
-
-      // Создаем необходимые директории
-      await this.createDirectories();
-
-      // Запускаем сервис автоматизации
-      getAutomationService().start();
-
-      // Запускаем сервер
-      this.server.listen(config.port, () => {
-        logger.info(`🚀 Server running on port ${config.port}`);
-        logger.info(`📍 Environment: ${config.nodeEnv}`);
-        logger.info(`🌐 API URL: http://localhost:${config.port}/api`);
-        logger.info(`📊 Health check: http://localhost:${config.port}/health`);
-        logger.info(`🔗 AdsPower API: http://local.adspower.net:50325`);
-        
-        if (config.nodeEnv === 'development') {
-          logger.info(`📖 API Documentation: http://localhost:${config.port}/api`);
-        }
+    } catch (error) {
+      logger.warn('AdsPower initialization failed (expected in cloud environment):', error);
+    }
+    
+    // Автозапуск автоматизации в продакшене
+    if (config.nodeEnv === 'production') {
+      const { Account } = await import('./models/Account');
+      const activeAccountsCount = await Account.countDocuments({ 
+        isRunning: true, 
+        status: 'active' 
       });
 
-      // Настраиваем graceful shutdown
-      handleGracefulShutdown(this.server);
-
-    } catch (error) {
-      logger.error('Failed to start server:', error);
-      process.exit(1);
-    }
-  }
-
-  private async createDirectories(): Promise<void> {
-    const fs = require('fs');
-    const path = require('path');
-
-    const directories = [
-      'logs',
-      'temp',
-      'uploads'
-    ];
-
-    for (const dir of directories) {
-      const dirPath = path.join(process.cwd(), dir);
-      if (!fs.existsSync(dirPath)) {
-        fs.mkdirSync(dirPath, { recursive: true });
-        logger.info(`Created directory: ${dir}`);
+      if (activeAccountsCount > 0) {
+        setTimeout(() => {
+          const automationService = getAutomationService();
+          automationService.start();
+          logger.info(`🤖 Automation started automatically (${activeAccountsCount} active accounts)`);
+        }, 10000); // Через 10 секунд после старта
       }
     }
+    
+    logger.info('✅ Application initialization completed');
+  } catch (error) {
+    logger.error('❌ Application initialization failed:', error);
   }
+};
 
-  public getApp(): express.Application {
-    return this.app;
-  }
+initializeApp();
 
-  public getServer(): any {
-    return this.server;
-  }
+// Middleware
+app.use(compression()); // Сжатие ответов
+app.use(helmet({
+  contentSecurityPolicy: false, // Отключаем для фронтенда
+  crossOriginEmbedderPolicy: false
+}));
 
-  public getIO(): Server {
-    return this.io;
+app.use(cors({
+  origin: config.nodeEnv === 'production' 
+    ? [process.env.FRONTEND_URL || 'https://orbithub.onrender.com'] 
+    : ['http://localhost:3000', 'http://localhost:5173'],
+  credentials: true
+}));
+
+app.use(morgan(config.nodeEnv === 'production' ? 'combined' : 'dev'));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Статические файлы
+app.use('/uploads', express.static('uploads'));
+app.use('/temp', express.static('temp'));
+
+// В продакшене раздаем frontend
+if (config.nodeEnv === 'production') {
+  // Раздаем статические файлы фронтенда
+  const frontendPath = path.join(__dirname, '../../frontend/dist');
+  if (fs.existsSync(frontendPath)) {
+    app.use(express.static(frontendPath));
   }
 }
 
-// Расширяем глобальные типы для Socket.IO
-declare global {
-  var io: Server;
-}
+// Health check расширенный
+app.get('/health', async (req, res) => {
+  try {
+    const { checkAdsPowerConnection } = await import('./config/adspower');
+    const { DropboxService } = await import('./services/DropboxService');
+    
+    let adsPowerStatus = false;
+    try {
+      adsPowerStatus = await checkAdsPowerConnection();
+    } catch (error) {
+      // AdsPower недоступен в облачной среде
+    }
+    
+    let dropboxStatus = false;
+    let dropboxInfo = null;
+    try {
+      const dropboxService = DropboxService.getInstance();
+      dropboxStatus = await dropboxService.validateAccessToken();
+      if (dropboxStatus) {
+        const timeRemaining = dropboxService.getTokenTimeRemaining();
+        dropboxInfo = {
+          tokenExpiring: dropboxService.isTokenExpiringSoon(),
+          timeRemaining
+        };
+      }
+    } catch (error) {
+      // Dropbox service not initialized
+    }
 
-// Создаем и запускаем приложение
-const app = new App();
+    // Проверяем автоматизацию
+    const automationService = getAutomationService();
+    const automationRunning = automationService.isSystemRunning();
+    
+    res.json({ 
+      status: 'OK', 
+      timestamp: new Date().toISOString(),
+      environment: config.nodeEnv,
+      uptime: process.uptime(),
+      services: {
+        database: 'connected',
+        adspower: adsPowerStatus ? 'connected' : 'disconnected',
+        dropbox: dropboxStatus ? 'connected' : 'disconnected',
+        automation: automationRunning ? 'running' : 'stopped'
+      },
+      dropboxInfo,
+      memory: process.memoryUsage(),
+      version: '1.0.0'
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      status: 'ERROR',
+      error: error.message
+    });
+  }
+});
 
-// Запускаем сервер только если файл запущен напрямую
-if (require.main === module) {
-  app.start().catch((error) => {
-    logger.error('Failed to start application:', error);
-    process.exit(1);
+// Simple status endpoint
+app.get('/status', (req, res) => {
+  res.json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    environment: config.nodeEnv
+  });
+});
+
+// API Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/adspower', adsPowerRoutes);
+app.use('/api/accounts', accountRoutes);
+app.use('/api/dropbox', dropboxRoutes);
+app.use('/api/instagram', instagramRoutes);
+app.use('/api/automation', automationRoutes);
+
+// В продакшене все неизвестные роуты отправляем на фронтенд
+if (config.nodeEnv === 'production') {
+  app.get('*', (req, res) => {
+    const frontendPath = path.join(__dirname, '../../frontend/dist/index.html');
+    if (fs.existsSync(frontendPath)) {
+      res.sendFile(frontendPath);
+    } else {
+      res.status(404).json({ error: 'Frontend not found' });
+    }
   });
 }
+
+// Error handling
+app.use(notFoundHandler);
+app.use(errorHandler);
+
+const PORT = config.port;
+
+app.listen(PORT, '0.0.0.0', () => {
+  logger.info(`🚀 OrbitHub server running on port ${PORT} in ${config.nodeEnv} mode`);
+  logger.info(`📊 Health check: http://localhost:${PORT}/health`);
+  if (config.nodeEnv === 'production') {
+    logger.info(`🌐 Frontend served from: http://localhost:${PORT}`);
+  }
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  logger.info('SIGTERM received, shutting down gracefully');
+  const automationService = getAutomationService();
+  if (automationService.isSystemRunning()) {
+    automationService.stop();
+  }
+  process.exit(0);
+});
 
 export default app; 
