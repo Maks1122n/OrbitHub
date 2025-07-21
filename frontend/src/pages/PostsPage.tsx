@@ -5,49 +5,100 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import toast from 'react-hot-toast';
 
-import { postsApi, Post } from '../services/postsApi';
+import { postsApi, Post, CreatePostData } from '../services/postsApi';
 import { accountsApi } from '../services/accountsApi';
 
 export const PostsPage: React.FC = () => {
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [newPost, setNewPost] = useState({
+  const [editingPost, setEditingPost] = useState<Post | null>(null);
+  const [filterStatus, setFilterStatus] = useState<string>('');
+  const [filterAccount, setFilterAccount] = useState<string>('');
+  const [newPost, setNewPost] = useState<CreatePostData & { title?: string }>({
     title: '',
     content: '',
     accountId: '',
-    scheduledAt: ''
+    scheduledAt: '',
+    priority: 'normal'
   });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string>('');
+  const [isDragOver, setIsDragOver] = useState(false);
   
   const queryClient = useQueryClient();
 
   // Получение списка постов
-  const { data: posts = [], isLoading } = useQuery(
-    'posts',
-    postsApi.getPosts,
+  const { data: posts = [], isLoading, error, refetch } = useQuery(
+    ['posts', filterStatus, filterAccount],
+    () => postsApi.getPosts({
+      status: filterStatus || undefined,
+      accountId: filterAccount || undefined,
+      limit: 50
+    }),
     {
-      refetchInterval: 30000 // Обновляем каждые 30 секунд
+      refetchInterval: 30000, // Обновляем каждые 30 секунд
+      retry: 2,
+      staleTime: 15000
     }
   );
 
   // Получение списка аккаунтов для dropdown
   const { data: accounts = [] } = useQuery(
-    'accounts',
-    accountsApi.getAccounts
+    ['accounts'],
+    accountsApi.getAccounts,
+    {
+      staleTime: 60000 // Кешируем на минуту
+    }
+  );
+
+  // Получение статистики постов
+  const { data: postsStats } = useQuery(
+    ['posts-stats'],
+    postsApi.getPostsStats,
+    {
+      refetchInterval: 30000,
+      staleTime: 15000
+    }
   );
 
   // Создание поста
   const createPostMutation = useMutation(
-    postsApi.createPost,
+    (data: FormData | CreatePostData) => {
+      if (data instanceof FormData) {
+        return postsApi.createPost(data);
+      } else {
+        return postsApi.createTextPost(data);
+      }
+    },
     {
       onSuccess: () => {
-        toast.success('Пост успешно создан!');
+        toast.success(editingPost ? 'Пост обновлен!' : 'Пост успешно создан!');
         setShowCreateForm(false);
+        setEditingPost(null);
         resetForm();
-        queryClient.invalidateQueries('posts');
+        queryClient.invalidateQueries(['posts']);
+        queryClient.invalidateQueries(['posts-stats']);
       },
       onError: (error: any) => {
-        toast.error(error.response?.data?.error || 'Ошибка создания поста');
+        console.error('Post mutation error:', error);
+        toast.error(error.message || 'Ошибка при работе с постом');
+      }
+    }
+  );
+
+  // Обновление поста
+  const updatePostMutation = useMutation(
+    ({ postId, data }: { postId: string; data: Partial<CreatePostData> }) =>
+      postsApi.updatePost(postId, data),
+    {
+      onSuccess: () => {
+        toast.success('Пост обновлен!');
+        setEditingPost(null);
+        setShowCreateForm(false);
+        resetForm();
+        queryClient.invalidateQueries(['posts']);
+      },
+      onError: (error: any) => {
+        toast.error(error.message || 'Ошибка обновления поста');
       }
     }
   );
@@ -58,10 +109,11 @@ export const PostsPage: React.FC = () => {
     {
       onSuccess: () => {
         toast.success('Пост удален!');
-        queryClient.invalidateQueries('posts');
+        queryClient.invalidateQueries(['posts']);
+        queryClient.invalidateQueries(['posts-stats']);
       },
       onError: (error: any) => {
-        toast.error(error.response?.data?.error || 'Ошибка удаления поста');
+        toast.error(error.message || 'Ошибка удаления поста');
       }
     }
   );
@@ -72,49 +124,141 @@ export const PostsPage: React.FC = () => {
     {
       onSuccess: () => {
         toast.success('Пост опубликован!');
-        queryClient.invalidateQueries('posts');
+        queryClient.invalidateQueries(['posts']);
+        queryClient.invalidateQueries(['posts-stats']);
       },
       onError: (error: any) => {
-        toast.error(error.response?.data?.error || 'Ошибка публикации');
+        toast.error(error.message || 'Ошибка публикации');
+      }
+    }
+  );
+
+  // Дублирование поста
+  const duplicatePostMutation = useMutation(
+    postsApi.duplicatePost,
+    {
+      onSuccess: () => {
+        toast.success('Пост дублирован!');
+        queryClient.invalidateQueries(['posts']);
+      },
+      onError: (error: any) => {
+        toast.error(error.message || 'Ошибка дублирования поста');
       }
     }
   );
 
   const resetForm = () => {
-    setNewPost({ title: '', content: '', accountId: '', scheduledAt: '' });
+    setNewPost({ title: '', content: '', accountId: '', scheduledAt: '', priority: 'normal' });
     setSelectedFile(null);
     setPreviewUrl('');
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setSelectedFile(file);
-      
-      // Создаем превью
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setPreviewUrl(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+  const handleFileChange = (file: File) => {
+    setSelectedFile(file);
+    
+    // Создаем превью
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setPreviewUrl(e.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      const file = files[0];
+      if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
+        handleFileChange(file);
+      } else {
+        toast.error('Поддерживаются только изображения и видео');
+      }
     }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPost.content || !selectedFile) {
-      toast.error('Заполните текст и добавьте медиафайл');
+    
+    // Валидация
+    if (!newPost.content.trim()) {
+      toast.error('Введите текст поста');
+      return;
+    }
+    if (!newPost.accountId) {
+      toast.error('Выберите аккаунт для публикации');
       return;
     }
 
-    const formData = new FormData();
-    formData.append('title', newPost.title);
-    formData.append('content', newPost.content);
-    formData.append('accountId', newPost.accountId);
-    formData.append('scheduledAt', newPost.scheduledAt);
-    formData.append('media', selectedFile);
+    if (editingPost) {
+      // Обновляем существующий пост
+      updatePostMutation.mutate({
+        postId: editingPost._id,
+        data: {
+          title: newPost.title,
+          content: newPost.content,
+          accountId: newPost.accountId,
+          scheduledAt: newPost.scheduledAt || undefined,
+          priority: newPost.priority
+        }
+      });
+    } else {
+      // Создаем новый пост
+      if (selectedFile) {
+        // С медиафайлом
+        const formData = new FormData();
+        formData.append('title', newPost.title || '');
+        formData.append('content', newPost.content);
+        formData.append('accountId', newPost.accountId);
+        if (newPost.scheduledAt) formData.append('scheduledAt', newPost.scheduledAt);
+        formData.append('priority', newPost.priority || 'normal');
+        formData.append('media', selectedFile);
 
-    createPostMutation.mutate(formData);
+        createPostMutation.mutate(formData);
+      } else {
+        // Только текст
+        createPostMutation.mutate({
+          title: newPost.title,
+          content: newPost.content,
+          accountId: newPost.accountId,
+          scheduledAt: newPost.scheduledAt || undefined,
+          priority: newPost.priority
+        });
+      }
+    }
+  };
+
+  const handleEdit = (post: Post) => {
+    setEditingPost(post);
+    setNewPost({
+      title: post.title,
+      content: post.content,
+      accountId: post.accountId,
+      scheduledAt: post.scheduledAt ? new Date(post.scheduledAt).toISOString().slice(0, 16) : '',
+      priority: post.scheduling?.priority || 'normal'
+    });
+    if (post.mediaUrl) {
+      setPreviewUrl(post.mediaUrl);
+    }
+    setShowCreateForm(true);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingPost(null);
+    setShowCreateForm(false);
+    resetForm();
   };
 
   const getStatusColor = (status: string) => {
@@ -144,6 +288,17 @@ export const PostsPage: React.FC = () => {
   // Получаем selected account для отображения
   const selectedAccount = accounts.find(acc => acc._id === newPost.accountId);
 
+  // Используем статистику с сервера или вычисляем локально
+  const stats = postsStats || {
+    scheduled: posts.filter(post => post.status === 'scheduled').length,
+    published: posts.filter(post => post.status === 'published').length,
+    draft: posts.filter(post => post.status === 'draft').length,
+    failed: posts.filter(post => post.status === 'failed').length,
+    total: posts.length,
+    publishedToday: 0,
+    scheduledToday: 0
+  };
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="mb-8">
@@ -163,9 +318,7 @@ export const PostsPage: React.FC = () => {
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-400">Запланировано</p>
-                <p className="text-2xl font-bold text-white">
-                  {posts.filter(post => post.status === 'scheduled').length}
-                </p>
+                <p className="text-2xl font-bold text-white">{stats.scheduled}</p>
               </div>
             </div>
           </div>
@@ -181,9 +334,7 @@ export const PostsPage: React.FC = () => {
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-400">Опубликовано</p>
-                <p className="text-2xl font-bold text-white">
-                  {posts.filter(post => post.status === 'published').length}
-                </p>
+                <p className="text-2xl font-bold text-white">{stats.published}</p>
               </div>
             </div>
           </div>
@@ -199,9 +350,7 @@ export const PostsPage: React.FC = () => {
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-400">Черновики</p>
-                <p className="text-2xl font-bold text-white">
-                  {posts.filter(post => post.status === 'draft').length}
-                </p>
+                <p className="text-2xl font-bold text-white">{stats.draft}</p>
               </div>
             </div>
           </div>
@@ -217,31 +366,84 @@ export const PostsPage: React.FC = () => {
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-400">Ошибки</p>
-                <p className="text-2xl font-bold text-white">
-                  {posts.filter(post => post.status === 'failed').length}
-                </p>
+                <p className="text-2xl font-bold text-white">{stats.failed}</p>
               </div>
             </div>
           </div>
         </Card>
       </div>
 
-      {/* Действия */}
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-semibold text-white">Ваши посты</h2>
-        <Button onClick={() => setShowCreateForm(true)}>
-          <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-          </svg>
-          Создать пост
-        </Button>
+      {/* Ошибка загрузки */}
+      {error && (
+        <Card className="mb-6">
+          <div className="p-4 bg-red-500/10 border border-red-500/20">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <svg className="h-5 w-5 text-red-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-red-400">Ошибка загрузки постов</span>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => refetch()}>
+                Попробовать снова
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Фильтры и действия */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div className="flex gap-4">
+          <select
+            className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+          >
+            <option value="">Все статусы</option>
+            <option value="draft">Черновики</option>
+            <option value="scheduled">Запланированные</option>
+            <option value="published">Опубликованные</option>
+            <option value="failed">С ошибками</option>
+          </select>
+
+          <select
+            className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+            value={filterAccount}
+            onChange={(e) => setFilterAccount(e.target.value)}
+          >
+            <option value="">Все аккаунты</option>
+            {accounts.map(account => (
+              <option key={account._id} value={account._id}>
+                @{account.username}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex gap-2">
+          <Button variant="ghost" onClick={() => refetch()} disabled={isLoading}>
+            <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Обновить
+          </Button>
+          <Button onClick={() => setShowCreateForm(true)}>
+            <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+            Создать пост
+          </Button>
+        </div>
       </div>
 
-      {/* Форма создания поста */}
+      {/* Форма создания/редактирования поста */}
       {showCreateForm && (
         <Card className="mb-6">
           <div className="p-6">
-            <h3 className="text-lg font-semibold text-white mb-4">Создать новый пост</h3>
+            <h3 className="text-lg font-semibold text-white mb-4">
+              {editingPost ? 'Редактировать пост' : 'Создать новый пост'}
+            </h3>
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Левая колонка - форма */}
@@ -275,25 +477,60 @@ export const PostsPage: React.FC = () => {
                     ))}
                   </select>
 
-                  <Input
-                    type="datetime-local"
-                    value={newPost.scheduledAt}
-                    onChange={(e) => setNewPost({...newPost, scheduledAt: e.target.value})}
-                    min={new Date().toISOString().slice(0, 16)}
-                  />
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-400 mb-2">
-                      Медиафайл
-                    </label>
-                    <input
-                      type="file"
-                      accept="image/*,video/*"
-                      onChange={handleFileChange}
-                      className="w-full text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                      required
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Input
+                      type="datetime-local"
+                      value={newPost.scheduledAt}
+                      onChange={(e) => setNewPost({...newPost, scheduledAt: e.target.value})}
+                      min={new Date().toISOString().slice(0, 16)}
                     />
+
+                    <select
+                      className="p-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+                      value={newPost.priority}
+                      onChange={(e) => setNewPost({...newPost, priority: e.target.value as 'low' | 'normal' | 'high'})}
+                    >
+                      <option value="low">Низкий приоритет</option>
+                      <option value="normal">Обычный</option>
+                      <option value="high">Высокий приоритет</option>
+                    </select>
                   </div>
+
+                  {/* Drag & Drop зона для файлов */}
+                  {!editingPost && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-400 mb-2">
+                        Медиафайл (опционально)
+                      </label>
+                      <div
+                        className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+                          isDragOver 
+                            ? 'border-blue-500 bg-blue-500/10' 
+                            : 'border-gray-600 hover:border-gray-500'
+                        }`}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                      >
+                        <svg className="h-12 w-12 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        <p className="text-gray-400 mb-2">
+                          Перетащите файл сюда или 
+                          <label className="text-blue-400 hover:text-blue-300 cursor-pointer ml-1">
+                            выберите файл
+                            <input
+                              type="file"
+                              accept="image/*,video/*"
+                              onChange={(e) => e.target.files?.[0] && handleFileChange(e.target.files[0])}
+                              className="hidden"
+                            />
+                          </label>
+                        </p>
+                        <p className="text-xs text-gray-500">Поддерживаются изображения и видео</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Правая колонка - превью */}
@@ -302,13 +539,13 @@ export const PostsPage: React.FC = () => {
                   <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
                     {previewUrl && (
                       <div className="mb-4">
-                        {selectedFile?.type.startsWith('image/') ? (
+                        {selectedFile?.type.startsWith('image/') || previewUrl.includes('image') || previewUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
                           <img
                             src={previewUrl}
                             alt="Preview"
                             className="w-full h-48 object-cover rounded-lg"
                           />
-                        ) : selectedFile?.type.startsWith('video/') ? (
+                        ) : (previewUrl.includes('video') || previewUrl.match(/\.(mp4|mov|avi|webm)$/i)) ? (
                           <video
                             src={previewUrl}
                             className="w-full h-48 object-cover rounded-lg"
@@ -319,7 +556,14 @@ export const PostsPage: React.FC = () => {
                     )}
                     
                     <div className="text-white">
-                      <div className="font-medium mb-2">@{selectedAccount?.username || 'account'}</div>
+                      <div className="font-medium mb-2 flex items-center">
+                        <div className="w-8 h-8 bg-gradient-to-r from-purple-400 to-pink-400 rounded-full flex items-center justify-center mr-2">
+                          <span className="text-xs font-bold text-white">
+                            {selectedAccount?.username?.charAt(0)?.toUpperCase() || 'A'}
+                          </span>
+                        </div>
+                        @{selectedAccount?.username || 'account'}
+                      </div>
                       <div className="text-sm whitespace-pre-wrap">
                         {newPost.content || 'Текст поста появится здесь...'}
                       </div>
@@ -330,18 +574,35 @@ export const PostsPage: React.FC = () => {
                         Публикация: {formatDate(newPost.scheduledAt)}
                       </div>
                     )}
+
+                    {newPost.priority !== 'normal' && (
+                      <div className="mt-2">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          newPost.priority === 'high' 
+                            ? 'text-red-400 bg-red-500/20' 
+                            : 'text-yellow-400 bg-yellow-500/20'
+                        }`}>
+                          {newPost.priority === 'high' ? 'Высокий приоритет' : 'Низкий приоритет'}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
 
               <div className="flex gap-2">
-                <Button type="submit" loading={createPostMutation.isLoading}>
-                  {newPost.scheduledAt ? 'Запланировать' : 'Сохранить как черновик'}
+                <Button 
+                  type="submit" 
+                  loading={createPostMutation.isLoading || updatePostMutation.isLoading}
+                >
+                  {editingPost 
+                    ? 'Сохранить изменения'
+                    : newPost.scheduledAt 
+                      ? 'Запланировать' 
+                      : 'Сохранить как черновик'
+                  }
                 </Button>
-                <Button variant="secondary" onClick={() => {
-                  setShowCreateForm(false);
-                  resetForm();
-                }}>
+                <Button variant="secondary" onClick={handleCancelEdit}>
                   Отмена
                 </Button>
               </div>
@@ -365,7 +626,15 @@ export const PostsPage: React.FC = () => {
               <svg className="h-12 w-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <p>Посты не найдены. Создайте свой первый пост.</p>
+              <p className="mb-4">
+                {filterStatus || filterAccount 
+                  ? 'Посты не найдены для выбранных фильтров' 
+                  : 'Посты не найдены. Создайте свой первый пост.'
+                }
+              </p>
+              <Button onClick={() => setShowCreateForm(true)}>
+                Создать пост
+              </Button>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -395,9 +664,20 @@ export const PostsPage: React.FC = () => {
                   <div className="p-4">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm text-gray-400">@{post.account?.username || 'unknown'}</span>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(post.status)}`}>
-                        {getStatusText(post.status)}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {post.scheduling?.priority && post.scheduling.priority !== 'normal' && (
+                          <span className={`px-1 py-0.5 rounded text-xs font-medium ${
+                            post.scheduling.priority === 'high' 
+                              ? 'text-red-400 bg-red-500/20' 
+                              : 'text-yellow-400 bg-yellow-500/20'
+                          }`}>
+                            {post.scheduling.priority === 'high' ? '⬆️' : '⬇️'}
+                          </span>
+                        )}
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(post.status)}`}>
+                          {getStatusText(post.status)}
+                        </span>
+                      </div>
                     </div>
                     
                     {post.title && (
@@ -407,6 +687,12 @@ export const PostsPage: React.FC = () => {
                     <p className="text-sm text-gray-300 mb-4 line-clamp-3">
                       {post.content}
                     </p>
+
+                    {post.error && (
+                      <div className="mb-4 p-2 bg-red-500/10 border border-red-500/20 rounded text-xs text-red-400">
+                        Ошибка: {post.error}
+                      </div>
+                    )}
                     
                     <div className="text-xs text-gray-400 mb-4">
                       {post.status === 'scheduled' ? (
@@ -418,7 +704,7 @@ export const PostsPage: React.FC = () => {
                       )}
                     </div>
                     
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       {post.status === 'scheduled' && (
                         <Button
                           size="sm"
@@ -428,14 +714,39 @@ export const PostsPage: React.FC = () => {
                           Опубликовать сейчас
                         </Button>
                       )}
+                      
+                      {(post.status === 'draft' || post.status === 'scheduled' || post.status === 'failed') && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleEdit(post)}
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </Button>
+                      )}
+
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => duplicatePostMutation.mutate(post._id)}
+                        loading={duplicatePostMutation.isLoading}
+                      >
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      </Button>
+                      
                       <Button
                         size="sm"
                         variant="ghost"
                         onClick={() => {
-                          if (confirm('Вы уверены что хотите удалить этот пост?')) {
+                          if (confirm(`Вы уверены что хотите удалить пост "${post.title || 'без названия'}"?`)) {
                             deletePostMutation.mutate(post._id);
                           }
                         }}
+                        loading={deletePostMutation.isLoading}
                       >
                         <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />

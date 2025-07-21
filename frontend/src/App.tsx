@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './contexts/AuthContext';
@@ -9,8 +9,12 @@ import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { AccountsPage } from './pages/AccountsPage';
 import { PostsPage } from './pages/PostsPage';
+import { SchedulerPage } from './pages/SchedulerPage';
 import { AutomationPage } from './pages/AutomationPage';
 import { AdsPowerTest } from './pages/AdsPowerTest';
+import { TemplatesPage } from './pages/TemplatesPage';
+import { BulkOperationsPage } from './pages/BulkOperationsPage';
+import { AnalyticsPage } from './pages/AnalyticsPage';
 
 // Создаем заглушки для оставшихся страниц
 const DropboxPage = () => (
@@ -29,27 +33,6 @@ const DropboxPage = () => (
         • Синхронизация медиафайлов<br/>
         • Автоматическая загрузка из папок<br/>
         • Резервное копирование контента
-      </div>
-    </div>
-  </div>
-);
-
-const AnalyticsPage = () => (
-  <div className="p-6 max-w-7xl mx-auto">
-    <div className="mb-8">
-      <h1 className="text-3xl font-bold text-white mb-2">Аналитика</h1>
-      <p className="text-gray-400">Статистика и аналитика публикаций</p>
-    </div>
-    <div className="bg-gray-800 p-8 rounded-lg border border-gray-700 text-center">
-      <svg className="h-16 w-16 mx-auto mb-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-      </svg>
-      <h2 className="text-xl font-bold text-white mb-2">Аналитика и отчеты</h2>
-      <p className="text-gray-400 mb-4">Детальная аналитика будет добавлена в следующих обновлениях</p>
-      <div className="text-sm text-gray-500">
-        • Статистика публикаций<br/>
-        • Аналитика охвата и вовлеченности<br/>
-        • Отчеты по эффективности
       </div>
     </div>
   </div>
@@ -241,6 +224,16 @@ function App() {
                 } 
               />
               <Route 
+                path="/scheduler" 
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <SchedulerPage />
+                    </Layout>
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
                 path="/automation" 
                 element={
                   <ProtectedRoute>
@@ -251,11 +244,21 @@ function App() {
                 } 
               />
               <Route 
-                path="/dropbox" 
+                path="/templates" 
                 element={
                   <ProtectedRoute>
                     <Layout>
-                      <DropboxPage />
+                      <TemplatesPage />
+                    </Layout>
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/bulk" 
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <BulkOperationsPage />
                     </Layout>
                   </ProtectedRoute>
                 } 
