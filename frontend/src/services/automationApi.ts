@@ -1,142 +1,125 @@
-import { api } from './api';
+import axios from 'axios';
 
-export interface AutomationStats {
-  totalAccounts: number;
-  activeAccounts: number;
-  runningAccounts: number;
-  publicationsToday: number;
-  successfulToday: number;
-  failedToday: number;
-  nextScheduledPublication?: Date;
-  systemUptime: number;
-}
+const API_BASE_URL = process.env.REACT_APP_API_URL || 
+  (typeof window !== 'undefined' && window.location.hostname.includes('onrender.com') 
+    ? `https://${window.location.hostname}/api`
+    : 'http://localhost:5000/api');
 
-export interface SystemStatus {
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Добавляем токен аутентификации к каждому запросу
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+export interface AutomationStatus {
   isRunning: boolean;
+  activeAccounts: number;
+  totalAccounts: number;
+  postsPublishedToday: number;
+  successRate: number;
   uptime: number;
-  uptimeFormatted: string;
+  nextScheduledPost: string | null;
 }
 
-export interface PublicationJob {
-  accountId: string;
-  scheduledTime: Date;
-  videoFileName: string;
-  retryCount: number;
-  priority: 'low' | 'normal' | 'high';
-  account?: {
-    username: string;
-    displayName: string;
-  };
+export interface AutomationSettings {
+  minDelayBetweenPosts: number;
+  maxDelayBetweenPosts: number;
+  maxPostsPerDay: number;
+  workingHoursStart: string;
+  workingHoursEnd: string;
+  pauseOnWeekends: boolean;
+  enableRandomDelay: boolean;
+}
+
+export interface AutomationLog {
+  id: string;
+  timestamp: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  message: string;
+  accountUsername?: string;
 }
 
 export const automationApi = {
-  // Управление системой автоматизации
-  startSystem: () =>
-    api.post<{ success: boolean; data: { message: string; startTime: Date } }>('/automation/start'),
-
-  stopSystem: () =>
-    api.post<{ success: boolean; data: { message: string } }>('/automation/stop'),
-
-  restartSystem: () =>
-    api.post<{ success: boolean; data: { message: string; restartTime: Date } }>('/automation/restart'),
-
-  // Получение статистики и статуса
-  getStats: () =>
-    api.get<{ 
-      success: boolean; 
-      data: { 
-        stats: AutomationStats;
-        systemStatus: SystemStatus;
-      } 
-    }>('/automation/stats'),
-
-  getSystemStatus: () =>
-    api.get<{ 
-      success: boolean; 
-      data: { 
-        isRunning: boolean;
-        uptime: number;
-        uptimeFormatted: string;
-        queueLength: number;
-        nextPublication?: Date;
-      } 
-    }>('/automation/status'),
-
-  // Управление очередью публикаций
-  getPublicationQueue: () =>
-    api.get<{ 
-      success: boolean; 
-      data: { 
-        queue: PublicationJob[];
-        count: number;
-      } 
-    }>('/automation/queue'),
-
-  // Ручная публикация для аккаунта
-  publishNow: (accountId: string) =>
-    api.post<{ success: boolean; data: { message: string } }>(`/automation/accounts/${accountId}/publish-now`),
-
-  // Очистка очереди для аккаунта
-  clearAccountQueue: (accountId: string) =>
-    api.delete<{ 
-      success: boolean; 
-      data: { 
-        message: string;
-        removedCount: number;
-      } 
-    }>(`/automation/accounts/${accountId}/queue`),
-
-  // Настройки автоматизации
-  getSettings: () =>
-    api.get<{ 
-      success: boolean; 
-      data: { 
-        settings: {
-          checkInterval: number;
-          maxRetries: number;
-          retryDelay: number;
-          maxConcurrentPublications: number;
-        }
-      } 
-    }>('/automation/settings'),
-
-  updateSettings: (settings: any) =>
-    api.put<{ success: boolean; data: { message: string; settings: any } }>('/automation/settings', { settings }),
-
-  // Получение логов
-  getLogs: (params?: { limit?: number; level?: string }) =>
-    api.get<{ 
-      success: boolean; 
-      data: { 
-        logs: any[];
-        count: number;
-      } 
-    }>('/automation/logs', params),
-
-  // Server-Sent Events для real-time мониторинга
-  subscribeToEvents: (onEvent: (event: any) => void, onError?: (error: any) => void) => {
-    const eventSource = new EventSource(`${api.defaults?.baseURL || ''}/automation/events`, {
-      withCredentials: true
-    });
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        onEvent(data);
-      } catch (error) {
-        console.error('Error parsing SSE data:', error);
-        onError?.(error);
-      }
-    };
-
-    eventSource.onerror = (error) => {
-      console.error('SSE connection error:', error);
-      onError?.(error);
-    };
-
-    // Возвращаем функцию для закрытия соединения
-    return () => {
-      eventSource.close();
-    };
+  // Получить статус автоматизации
+  getStatus: async (): Promise<AutomationStatus> => {
+    try {
+      const response = await api.get('/automation/status');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching automation status:', error);
+      return {
+        isRunning: false,
+        activeAccounts: 0,
+        totalAccounts: 0,
+        postsPublishedToday: 0,
+        successRate: 0,
+        uptime: 0,
+        nextScheduledPost: null
+      };
+    }
+  },
+  
+  // Получить настройки автоматизации
+  getSettings: async (): Promise<AutomationSettings> => {
+    try {
+      const response = await api.get('/automation/settings');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching automation settings:', error);
+      return {
+        minDelayBetweenPosts: 3600,
+        maxDelayBetweenPosts: 7200,
+        maxPostsPerDay: 10,
+        workingHoursStart: '09:00',
+        workingHoursEnd: '18:00',
+        pauseOnWeekends: false,
+        enableRandomDelay: true
+      };
+    }
+  },
+  
+  // Обновить настройки автоматизации
+  updateSettings: async (settings: AutomationSettings) => {
+    const response = await api.put('/automation/settings', settings);
+    return response.data;
+  },
+  
+  // Запустить автоматизацию
+  start: async () => {
+    const response = await api.post('/automation/start');
+    return response.data;
+  },
+  
+  // Остановить автоматизацию
+  stop: async () => {
+    const response = await api.post('/automation/stop');
+    return response.data;
+  },
+  
+  // Перезапустить автоматизацию
+  restart: async () => {
+    const response = await api.post('/automation/restart');
+    return response.data;
+  },
+  
+  // Получить логи автоматизации
+  getLogs: async (): Promise<AutomationLog[]> => {
+    try {
+      const response = await api.get('/automation/logs');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching automation logs:', error);
+      return [];
+    }
   }
 }; 
