@@ -157,7 +157,7 @@ export class InstagramController {
 
         if (publishResult.success) {
           // Обновляем пост
-          await post.markAsPublished(publishResult.postUrl);
+          await (post as any).markAsPublished(publishResult.postUrl);
 
           // Обновляем статистику аккаунта
           await Account.findByIdAndUpdate(accountId, {
@@ -182,7 +182,7 @@ export class InstagramController {
           });
         } else {
           // Обновляем пост с ошибкой
-          await post.markAsFailed(publishResult.error || 'Unknown error', publishResult.errorType);
+          await (post as any).markAsFailed(publishResult.error || 'Unknown error', publishResult.errorType);
 
           // Обновляем статистику аккаунта
           await Account.findByIdAndUpdate(accountId, {
@@ -204,7 +204,7 @@ export class InstagramController {
 
       } catch (publishError: any) {
         // Обновляем пост с ошибкой
-        await post.markAsFailed(publishError.message, 'publish');
+        await (post as any).markAsFailed(publishError.message, 'publish');
         throw publishError;
       } finally {
         // Удаляем временный файл

@@ -302,7 +302,7 @@ const accountSchema = new Schema<IAccount>({
     trim: true
   }],
   createdBy: { 
-    type: Schema.Types.ObjectId, 
+    type: Schema.Types.ObjectId as any, 
     ref: 'User', 
     required: true 
   }
@@ -322,9 +322,9 @@ accountSchema.methods.decryptPassword = function(): string {
 
 // Middleware для шифрования пароля перед сохранением
 accountSchema.pre('save', function(next) {
-  if (this.isModified('password') && !this.password.includes('U2FsdGVkX1')) {
+  if ((this as any).isModified('password') && !(this as any).password.includes('U2FsdGVkX1')) {
     // Шифруем только если пароль изменился и еще не зашифрован
-    this.password = this.encryptPassword(this.password);
+    (this as any).password = (this as any).encryptPassword((this as any).password);
   }
   next();
 });

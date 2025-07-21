@@ -278,13 +278,13 @@ export class AutomationController {
 
       // Регистрируем обработчики событий
       Object.entries(eventHandlers).forEach(([event, handler]) => {
-        automationService.on(event, handler);
+        (automationService as any).on(event, handler);
       });
 
       // Очищаем обработчики при закрытии соединения
-      req.on('close', () => {
+      (req as any).on('close', () => {
         Object.entries(eventHandlers).forEach(([event, handler]) => {
-          automationService.removeListener(event, handler);
+          (automationService as any).removeListener(event, handler);
         });
       });
 

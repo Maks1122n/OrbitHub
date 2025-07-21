@@ -34,7 +34,7 @@ export interface IPost extends Document {
 
 const postSchema = new Schema<IPost>({
   accountId: {
-    type: Schema.Types.ObjectId,
+    type: Schema.Types.ObjectId as any,
     ref: 'Account',
     required: true,
     index: true
@@ -134,7 +134,7 @@ postSchema.index({ publishedAt: -1 });
 
 // Виртуальное поле для успешности публикации
 postSchema.virtual('isSuccess').get(function() {
-  return this.status === 'published';
+  return (this as any).status === 'published';
 });
 
 // Методы экземпляра

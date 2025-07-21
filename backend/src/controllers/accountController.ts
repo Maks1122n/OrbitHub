@@ -493,7 +493,8 @@ export class AccountController {
 
       // Проверяем доступность Dropbox
       try {
-        dropboxStatus = await dropboxService.checkFolderAccess(account.dropboxFolder);
+        const result = await dropboxService.checkFolderAccess(account.dropboxFolder);
+        dropboxStatus = typeof result === 'boolean' ? result : !!(result as any).success;
       } catch (error) {
         logger.warn(`Failed to check Dropbox access for ${account.username}:`, error);
       }
