@@ -23,7 +23,7 @@ import {
   CircularProgress,
   Tooltip
 } from '@mui/material';
-import { Link, Unlink, Refresh, Settings } from '@mui/icons-material';
+import { Link, LinkOff, Refresh, Settings } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { accountProxyApi, AccountWithProxy, AdsPowerStats } from '../services/accountProxyApi';
@@ -347,7 +347,7 @@ const AccountProxyPage: React.FC = () => {
                                 onClick={() => handleUnbindProxy(account)}
                                 color="error"
                               >
-                                <Unlink />
+                                <LinkOff />
                               </IconButton>
                             </Tooltip>
                             {account.adsPowerProfileId && (
