@@ -23,25 +23,26 @@ export interface RegisterData {
 }
 
 export interface AuthResponse {
-  user: User;
-  token: string;
+  success: boolean;
+  data: {
+    user: User;
+    token: string;
+    tokens?: any;
+  };
+  error?: string;
 }
 
 export const authApi = {
   // Вход в систему
   login: async (data: LoginData): Promise<AuthResponse> => {
     try {
-      const response = await api.post<AuthResponse>('/auth/login', data);
+      const response = await api.post('/auth/login', data);
+      console.log('🔑 API: Raw response from backend:', response);
       
-      // Сохраняем токен и данные пользователя
-      if (response.success && response.data) {
-        localStorage.setItem('authToken', response.data.token);
-        localStorage.setItem('user', JSON.stringify(response.data.user));
-      }
-      
-      return response.data;
+      // Backend возвращает структуру { success: boolean, data: { user, token } }
+      return response;
     } catch (error) {
-      console.error('Login error:', error);
+      console.error('🔑 API: Login error:', error);
       throw error;
     }
   },

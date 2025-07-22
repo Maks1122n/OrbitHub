@@ -56,10 +56,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
+      console.log('🔑 FRONTEND: Starting login request...', { email });
       const response = await authApi.login({ email, password });
       
-      if (response.data.success) {
-        const { user: userData, token } = response.data.data;
+      console.log('🔑 FRONTEND: Login response received:', response);
+      console.log('🔑 FRONTEND: Response data:', response);
+      console.log('🔑 FRONTEND: Response success:', response.success);
+      
+      if (response.success) {
+        console.log('🔑 FRONTEND: Login successful, extracting data...');
+        const { user: userData, token } = response.data;
+        
+        console.log('🔑 FRONTEND: User data:', userData);
+        console.log('🔑 FRONTEND: Token:', token);
         
         // Сохраняем токен и пользователя
         localStorage.setItem('authToken', token);
@@ -67,14 +76,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         
         setUser(userData);
         
+        console.log('🔑 FRONTEND: Login completed successfully');
         toast.success(`Добро пожаловать, ${userData.name}!`);
         return true;
       } else {
+        console.log('🔑 FRONTEND: Login failed - response.success is false');
+        console.log('🔑 FRONTEND: Error from response:', response.error);
         toast.error('Неверные учетные данные');
         return false;
       }
     } catch (error: any) {
-      console.error('Login error:', error);
+      console.error('🔑 FRONTEND: Login error:', error);
+      console.error('🔑 FRONTEND: Error response:', error.response);
+      console.error('🔑 FRONTEND: Error response data:', error.response?.data);
+      
       const message = error.response?.data?.error || 'Ошибка входа. Попробуйте снова.';
       toast.error(message);
       return false;
