@@ -274,6 +274,16 @@ function App() {
                 } 
               />
               <Route 
+                path="/dropbox" 
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <DropboxPage />
+                    </Layout>
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
                 path="/adspower-test" 
                 element={
                   <ProtectedRoute>
