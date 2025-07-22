@@ -32,6 +32,9 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 app.use('/screenshots', express.static(path.join(__dirname, '../screenshots')));
 
+// Serve frontend static files
+app.use(express.static(path.join(__dirname, '../../frontend/dist')));
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/accounts', accountRoutes);
@@ -47,20 +50,23 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// SPA fallback - serve index.html for all non-API routes
+app.get('*', (req, res) => {
+  // Skip API routes
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ success: false, error: 'Route not found' });
+  }
+  
+  // Serve index.html for SPA routes
+  res.sendFile(path.join(__dirname, '../../frontend/dist/index.html'));
+});
+
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   logger.error('Unhandled error:', err);
   res.status(500).json({ 
     success: false, 
     error: 'Internal server error' 
-  });
-});
-
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({ 
-    success: false, 
-    error: 'Route not found' 
   });
 });
 
