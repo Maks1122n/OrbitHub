@@ -234,7 +234,7 @@ const accountSchema = new Schema<IAccount>({
   
   // Прокси привязка
   proxyId: {
-    type: Schema.Types.ObjectId,
+    type: String,
     ref: 'Proxy'
   },
   
@@ -327,7 +327,7 @@ const accountSchema = new Schema<IAccount>({
     trim: true
   }],
   createdBy: { 
-    type: Schema.Types.ObjectId as any, 
+    type: String, 
     ref: 'User', 
     required: true 
   }
