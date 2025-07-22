@@ -6,6 +6,7 @@ import logger from '../utils/logger';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { AutomationService } from '../services/AutomationService';
 
 // Настройка multer для загрузки файлов
 const storage = multer.diskStorage({
@@ -326,15 +327,16 @@ export class PostController {
     }
   }
 
-  // Публикация поста сейчас
+  // Обновленный метод публикации поста с интеграцией автоматизации
   static async publishNow(req: AuthRequest, res: Response): Promise<void> {
     try {
       const { postId } = req.params;
 
+      // Проверка существования поста
       const post = await Post.findOne({
         _id: postId,
         createdBy: req.user!.userId
-      }).populate('accountId');
+      });
 
       if (!post) {
         res.status(404).json({
@@ -344,6 +346,7 @@ export class PostController {
         return;
       }
 
+      // Проверка что пост можно публиковать
       if (post.status === 'published') {
         res.status(400).json({
           success: false,
@@ -352,31 +355,28 @@ export class PostController {
         return;
       }
 
-      // Проверяем аккаунт
-      const account = post.accountId as any;
-      if (!account || account.status === 'banned') {
-        res.status(400).json({
-          success: false,
-          error: 'Account is not available for publishing'
+      // Используем новую систему автоматизации
+      const automationService = new AutomationService();
+      const result = await automationService.publishPostImmediately(postId);
+
+      if (result) {
+        const publishResult = await automationService.getPublishResult(postId);
+        
+        res.json({
+          success: true,
+          message: 'Post published successfully',
+          data: {
+            post: await Post.findById(postId).populate('accountId', 'username status'),
+            publishResult
+          }
         });
-        return;
+      } else {
+        res.status(500).json({
+          success: false,
+          error: 'Failed to publish post'
+        });
       }
 
-      // TODO: Интеграция с автоматизацией для немедленной публикации
-      // Пока просто меняем статус
-      post.status = 'scheduled';
-      post.scheduledAt = new Date(); // Немедленно
-      await post.save();
-
-      logger.info(`Post scheduled for immediate publishing: ${postId}`);
-
-      res.json({
-        success: true,
-        data: {
-          post,
-          message: 'Post scheduled for immediate publishing'
-        }
-      });
     } catch (error) {
       logger.error('Error publishing post:', error);
       res.status(500).json({

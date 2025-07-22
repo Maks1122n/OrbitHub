@@ -1,121 +1,148 @@
-// Используем централизованный API клиент
-import { api } from './api';
+import api from './api';
 
 export interface AutomationStatus {
   isRunning: boolean;
-  activeAccounts: number;
-  totalAccounts: number;
-  postsPublishedToday: number;
-  successRate: number;
-  uptime: number;
-  nextScheduledPost: string | null;
+  currentTask?: string;
+  tasksInQueue: number;
+  completedToday: number;
+  failedToday: number;
+  lastActivity?: Date;
+  activeBrowsers: number;
 }
 
-export interface AutomationSettings {
-  minDelayBetweenPosts: number;
-  maxDelayBetweenPosts: number;
-  maxPostsPerDay: number;
-  workingHoursStart: string;
-  workingHoursEnd: string;
-  pauseOnWeekends: boolean;
-  enableRandomDelay: boolean;
+export interface PuppeteerHealth {
+  status: 'healthy' | 'unhealthy';
+  activeBrowsers: number;
+  activeSessions: number;
+  adspowerConnected: boolean;
 }
 
-export interface AutomationLog {
-  id: string;
-  timestamp: string;
-  type: 'info' | 'success' | 'warning' | 'error';
-  message: string;
-  accountUsername?: string;
+export interface PublishResult {
+  postId: string;
+  accountId: string;
+  success: boolean;
+  instagramUrl?: string;
+  error?: string;
+  duration: number;
+  screenshots: string[];
+}
+
+export interface BrowserSession {
+  profileId: string;
+  username: string;
+  startTime: Date;
 }
 
 export const automationApi = {
-  // Получить статус автоматизации
-  getStatus: async (): Promise<AutomationStatus> => {
+  // Управление автоматизацией
+  startAutomation: async () => {
+    try {
+      const response = await api.post('/automation/start');
+      return response.data;
+    } catch (error) {
+      console.error('Error starting automation:', error);
+      throw error;
+    }
+  },
+
+  stopAutomation: async () => {
+    try {
+      const response = await api.post('/automation/stop');
+      return response.data;
+    } catch (error) {
+      console.error('Error stopping automation:', error);
+      throw error;
+    }
+  },
+
+  getStatus: async (): Promise<{
+    automation: AutomationStatus;
+    puppeteer: PuppeteerHealth;
+  }> => {
     try {
       const response = await api.get('/automation/status');
-      return response.data.data || {
-        isRunning: false,
-        activeAccounts: 0,
-        totalAccounts: 0,
-        postsPublishedToday: 0,
-        successRate: 0,
-        uptime: 0,
-        nextScheduledPost: null
-      };
+      return response.data.data;
     } catch (error) {
-      console.error('Error fetching automation status:', error);
-      return {
-        isRunning: false,
-        activeAccounts: 0,
-        totalAccounts: 0,
-        postsPublishedToday: 0,
-        successRate: 0,
-        uptime: 0,
-        nextScheduledPost: null
-      };
+      console.error('Error getting automation status:', error);
+      throw error;
     }
   },
-  
-  // Получить настройки автоматизации
-  getSettings: async (): Promise<AutomationSettings> => {
+
+  // Тестирование
+  testLogin: async (username: string, password: string, adspowerProfileId?: string) => {
     try {
-      const response = await api.get('/automation/settings');
-      return response.data.data || {
-        minDelayBetweenPosts: 3600,
-        maxDelayBetweenPosts: 7200,
-        maxPostsPerDay: 10,
-        workingHoursStart: '09:00',
-        workingHoursEnd: '18:00',
-        pauseOnWeekends: false,
-        enableRandomDelay: true
-      };
+      const response = await api.post('/automation/test-login', {
+        username,
+        password,
+        adspowerProfileId
+      });
+      return response.data;
     } catch (error) {
-      console.error('Error fetching automation settings:', error);
-      return {
-        minDelayBetweenPosts: 3600,
-        maxDelayBetweenPosts: 7200,
-        maxPostsPerDay: 10,
-        workingHoursStart: '09:00',
-        workingHoursEnd: '18:00',
-        pauseOnWeekends: false,
-        enableRandomDelay: true
-      };
+      console.error('Error testing login:', error);
+      throw error;
     }
   },
-  
-  // Обновить настройки автоматизации
-  updateSettings: async (settings: AutomationSettings) => {
-    const response = await api.put('/automation/settings', settings);
-    return response.data;
-  },
-  
-  // Запустить автоматизацию
-  start: async () => {
-    const response = await api.post('/automation/start');
-    return response.data;
-  },
-  
-  // Остановить автоматизацию
-  stop: async () => {
-    const response = await api.post('/automation/stop');
-    return response.data;
-  },
-  
-  // Перезапустить автоматизацию
-  restart: async () => {
-    const response = await api.post('/automation/restart');
-    return response.data;
-  },
-  
-  // Получить логи автоматизации
-  getLogs: async (): Promise<AutomationLog[]> => {
+
+  // Публикация постов
+  publishNow: async (postId: string) => {
     try {
-      const response = await api.get('/automation/logs');
-      return response.data.data || [];
+      const response = await api.post(`/automation/publish-now/${postId}`);
+      return response.data;
     } catch (error) {
-      console.error('Error fetching automation logs:', error);
-      return [];
+      console.error('Error publishing post:', error);
+      throw error;
+    }
+  },
+
+  getPublishResult: async (postId: string): Promise<PublishResult> => {
+    try {
+      const response = await api.get(`/automation/results/${postId}`);
+      return response.data.data;
+    } catch (error) {
+      console.error('Error getting publish result:', error);
+      throw error;
+    }
+  },
+
+  getAllResults: async (): Promise<PublishResult[]> => {
+    try {
+      const response = await api.get('/automation/results');
+      return response.data.data.results;
+    } catch (error) {
+      console.error('Error getting all results:', error);
+      throw error;
+    }
+  },
+
+  // Мониторинг
+  healthCheck: async (): Promise<PuppeteerHealth> => {
+    try {
+      const response = await api.get('/automation/health');
+      return response.data.data;
+    } catch (error) {
+      console.error('Error checking health:', error);
+      throw error;
+    }
+  },
+
+  getActiveSessions: async (): Promise<BrowserSession[]> => {
+    try {
+      const response = await api.get('/automation/sessions');
+      return response.data.data.sessions;
+    } catch (error) {
+      console.error('Error getting active sessions:', error);
+      throw error;
+    }
+  },
+
+  // Экстренная остановка
+  emergencyStop: async () => {
+    try {
+      const response = await api.post('/automation/emergency-stop');
+      return response.data;
+    } catch (error) {
+      console.error('Error in emergency stop:', error);
+      throw error;
     }
   }
 }; 

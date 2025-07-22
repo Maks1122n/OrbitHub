@@ -1,792 +1,521 @@
-import * as cron from 'node-cron';
-import { Account, IAccount } from '../models/Account';
-import { Post } from '../models/Post';
-import { AdsPowerService } from './AdsPowerService';
-import { InstagramService } from './InstagramService';
-import { DropboxService } from './DropboxService';
+import { PuppeteerService } from './PuppeteerService';
+import { InstagramAutomation } from './InstagramAutomation';
+import { Post, IPost } from '../models/Post';
+import { Account } from '../models/Account';
 import logger from '../utils/logger';
 import path from 'path';
-import { EventEmitter } from 'events';
+import fs from 'fs';
 
-export interface AutomationStats {
-  totalAccounts: number;
-  activeAccounts: number;
-  runningAccounts: number;
-  publicationsToday: number;
-  successfulToday: number;
-  failedToday: number;
-  nextScheduledPublication?: Date;
-  systemUptime: number;
-}
-
-export interface PublicationJob {
+interface PublishResult {
+  postId: string;
   accountId: string;
-  scheduledTime: Date;
-  videoFileName: string;
-  retryCount: number;
-  priority: 'low' | 'normal' | 'high';
+  success: boolean;
+  instagramUrl?: string;
+  error?: string;
+  duration: number;
+  screenshots: string[];
 }
 
-export class AutomationService extends EventEmitter {
-  private adsPowerService: AdsPowerService;
-  private instagramService: InstagramService;
-  private dropboxService: DropboxService;
-  private isRunning: boolean = false;
-  private startTime: Date;
-  private cronJobs: Map<string, cron.ScheduledTask> = new Map();
-  private publicationQueue: PublicationJob[] = [];
-  private processingQueue: boolean = false;
-  private maxConcurrentPublications: number = 3;
-  private activePublications: Set<string> = new Set();
+interface AutomationStatus {
+  isRunning: boolean;
+  currentTask?: string;
+  tasksInQueue: number;
+  completedToday: number;
+  failedToday: number;
+  lastActivity?: Date;
+  activeBrowsers: number;
+}
 
-  // Настройки планировщика
-  private settings = {
-    checkInterval: 5, // проверка каждые 5 минут
-    maxRetries: 3,
-    retryDelay: 30, // минут
-    errorThreshold: 5, // остановить аккаунт после 5 ошибок подряд
-    recoveryTime: 60, // минут до попытки восстановления
-  };
+export class AutomationService {
+  private puppeteerService: PuppeteerService;
+  private isRunning: boolean = false;
+  private currentTask: string | null = null;
+  private publishQueue: string[] = [];
+  private publishResults: Map<string, PublishResult> = new Map();
+  private automationInterval: NodeJS.Timeout | null = null;
+  private maxConcurrentBrowsers: number = 3;
+  private activeTasks: Set<string> = new Set();
 
   constructor() {
-    super();
-    this.adsPowerService = new AdsPowerService();
-    this.instagramService = new InstagramService();
-    this.dropboxService = DropboxService.getInstance();
-    this.startTime = new Date();
+    this.puppeteerService = new PuppeteerService();
+    logger.info('AutomationService initialized');
   }
 
-  // Запуск системы автоматизации
-  start(): void {
+  async startAutomation(): Promise<void> {
     if (this.isRunning) {
-      logger.warn('Automation service is already running');
+      logger.warn('Automation is already running');
       return;
     }
 
     this.isRunning = true;
-    this.startTime = new Date();
-    logger.info('🚀 Starting OrbitHub automation service...');
+    logger.info('🚀 Starting Instagram automation system');
 
-    // Основной планировщик - проверка каждые 5 минут
-    const mainScheduler = cron.schedule(`*/${this.settings.checkInterval} * * * *`, async () => {
-      await this.processScheduledPublications();
-    }, { scheduled: false });
+    // Запуск основного цикла автоматизации
+    this.runAutomationLoop();
 
-    this.cronJobs.set('main', mainScheduler);
-    mainScheduler.start();
-
-    // Планировщик обработки очереди - каждую минуту
-    const queueProcessor = cron.schedule('* * * * *', async () => {
-      await this.processPublicationQueue();
-    }, { scheduled: false });
-
-    this.cronJobs.set('queue', queueProcessor);
-    queueProcessor.start();
-
-    // Сброс ежедневных счетчиков в полночь
-    const dailyReset = cron.schedule('0 0 * * *', async () => {
-      await this.resetDailyCounters();
-    }, { scheduled: false });
-
-    this.cronJobs.set('daily', dailyReset);
-    dailyReset.start();
-
-    // Система мониторинга - каждые 15 минут
-    const monitoring = cron.schedule('*/15 * * * *', async () => {
-      await this.performHealthChecks();
-    }, { scheduled: false });
-
-    this.cronJobs.set('monitoring', monitoring);
-    monitoring.start();
-
-    // Очистка старых логов - каждые 6 часов
-    const cleanup = cron.schedule('0 */6 * * *', async () => {
-      await this.performCleanup();
-    }, { scheduled: false });
-
-    this.cronJobs.set('cleanup', cleanup);
-    cleanup.start();
-
-    logger.info('✅ Automation service started successfully');
-    this.emit('started');
+    // Запуск периодической проверки задач
+    this.automationInterval = setInterval(() => {
+      this.checkPendingTasks();
+    }, 60000); // Каждую минуту
   }
 
-  // Остановка системы автоматизации
-  stop(): void {
-    if (!this.isRunning) {
-      logger.warn('Automation service is not running');
-      return;
-    }
-
+  async stopAutomation(): Promise<void> {
     this.isRunning = false;
     
-    // Останавливаем все cron задачи
-    this.cronJobs.forEach((job, name) => {
-      job.stop();
-      logger.info(`Stopped cron job: ${name}`);
-    });
-    this.cronJobs.clear();
+    if (this.automationInterval) {
+      clearInterval(this.automationInterval);
+      this.automationInterval = null;
+    }
 
-    // Очищаем очередь
-    this.publicationQueue = [];
-    this.activePublications.clear();
+    // Ожидаем завершения активных задач
+    await this.waitForActiveTasks();
 
-    logger.info('🛑 Automation service stopped');
-    this.emit('stopped');
+    logger.info('⏹️ Instagram automation system stopped');
   }
 
-  // Обработка запланированных публикаций
-  private async processScheduledPublications(): Promise<void> {
+  private async runAutomationLoop(): Promise<void> {
+    while (this.isRunning) {
+      try {
+        // Проверяем количество активных задач
+        if (this.activeTasks.size >= this.maxConcurrentBrowsers) {
+          await this.wait(10000); // Ждем 10 секунд
+          continue;
+        }
+
+        // Найти посты готовые к публикации
+        const readyPosts = await this.getReadyToPublishPosts();
+        
+        if (readyPosts.length === 0) {
+          await this.wait(30000); // Ждем 30 секунд если нет задач
+          continue;
+        }
+
+        // Обрабатываем посты
+        for (const post of readyPosts) {
+          if (!this.isRunning) break;
+          if (this.activeTasks.size >= this.maxConcurrentBrowsers) break;
+
+          // Запускаем публикацию в фоне
+          this.publishPostAsync(post);
+          
+          // Безопасная задержка между запусками
+          await this.safeDelay();
+        }
+
+        // Короткая пауза перед следующей итерацией
+        await this.wait(10000);
+
+      } catch (error) {
+        logger.error('Error in automation loop:', { error: error.message });
+        await this.wait(30000); // Пауза при ошибке
+      }
+    }
+  }
+
+  private async publishPostAsync(post: IPost): Promise<void> {
+    const taskId = `${post._id}-${Date.now()}`;
+    this.activeTasks.add(taskId);
+    this.currentTask = `Publishing post ${post._id}`;
+
+    try {
+      await this.publishPost(post._id.toString());
+    } catch (error) {
+      logger.error(`Failed to publish post ${post._id}:`, { error: error.message });
+    } finally {
+      this.activeTasks.delete(taskId);
+      if (this.activeTasks.size === 0) {
+        this.currentTask = null;
+      }
+    }
+  }
+
+  async publishPost(postId: string): Promise<PublishResult> {
+    const startTime = Date.now();
+    logger.info(`📤 Starting publication of post: ${postId}`);
+
+    try {
+      const post = await Post.findById(postId).populate('accountId');
+      if (!post) {
+        throw new Error('Post not found');
+      }
+
+      const account = post.accountId as any;
+      if (!account) {
+        throw new Error('Account not found for post');
+      }
+
+      const result = await this.publishToAccount(post, account);
+      
+      // Обновляем статус поста
+      if (result.success) {
+        post.status = 'published';
+        post.publishedAt = new Date();
+        post.instagramUrl = result.instagramUrl;
+      } else {
+        post.status = 'failed';
+        post.error = result.error;
+        
+        // Увеличиваем счетчик попыток
+        post.attempts.count += 1;
+        post.attempts.lastAttempt = new Date();
+        post.attempts.errors.push(result.error || 'Unknown error');
+      }
+
+      await post.save();
+
+      const duration = Date.now() - startTime;
+      logger.info(`📤 Post publication completed in ${duration}ms:`, {
+        postId,
+        success: result.success,
+        error: result.error
+      });
+
+      const publishResult: PublishResult = {
+        postId,
+        accountId: account._id.toString(),
+        success: result.success,
+        instagramUrl: result.instagramUrl,
+        error: result.error,
+        duration,
+        screenshots: result.screenshots || []
+      };
+
+      this.publishResults.set(postId, publishResult);
+      return publishResult;
+
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      logger.error(`❌ Post publication failed:`, {
+        postId,
+        error: error.message,
+        duration
+      });
+
+      const publishResult: PublishResult = {
+        postId,
+        accountId: '',
+        success: false,
+        error: error.message,
+        duration,
+        screenshots: []
+      };
+
+      this.publishResults.set(postId, publishResult);
+      return publishResult;
+    }
+  }
+
+  private async publishToAccount(post: IPost, account: any): Promise<{
+    success: boolean;
+    instagramUrl?: string;
+    error?: string;
+    screenshots?: string[];
+  }> {
+    let browser = null;
+    let screenshots: string[] = [];
+
+    try {
+      logger.info(`🔑 Publishing to account: ${account.username}`);
+
+      // Запуск браузера
+      browser = await this.puppeteerService.initBrowser(
+        account.adspowerProfileId,
+        account.username
+      );
+
+      const page = await browser.newPage();
+      await this.puppeteerService.configurePage(page);
+
+      // Создание Instagram автоматизации
+      const instagram = new InstagramAutomation(page, browser, this.puppeteerService);
+
+      // Скриншот начального состояния
+      try {
+        const initialScreenshot = await instagram.takeScreenshot(`${post._id}-initial.png`);
+        screenshots.push(initialScreenshot);
+      } catch (error) {
+        logger.warn('Failed to take initial screenshot:', { error: error.message });
+      }
+
+      // Проверка авторизации
+      const isLoggedIn = await instagram.checkIfLoggedIn();
+      if (!isLoggedIn) {
+        // Попытка входа в Instagram
+        const loginResult = await instagram.loginToInstagram(
+          account.username,
+          account.password
+        );
+
+        if (!loginResult.success) {
+          if (loginResult.needsTwoFactor) {
+            throw new Error('Two-factor authentication required');
+          }
+          throw new Error(`Login failed: ${loginResult.error}`);
+        }
+
+        // Скриншот после входа
+        try {
+          const loginScreenshot = await instagram.takeScreenshot(`${post._id}-login.png`);
+          screenshots.push(loginScreenshot);
+        } catch (error) {
+          logger.warn('Failed to take login screenshot:', { error: error.message });
+        }
+      }
+
+      // Подготовка медиафайла
+      let mediaPath = '';
+      if (post.mediaUrl) {
+        mediaPath = this.resolveMediaPath(post.mediaUrl);
+        if (!fs.existsSync(mediaPath)) {
+          throw new Error(`Media file not found: ${mediaPath}`);
+        }
+      }
+
+      // Публикация поста
+      const publishResult = await instagram.createPost(
+        mediaPath,
+        post.content,
+        post.location
+      );
+
+      if (!publishResult.success) {
+        throw new Error(`Instagram post creation failed: ${publishResult.error}`);
+      }
+
+      // Скриншот после публикации
+      try {
+        const finalScreenshot = await instagram.takeScreenshot(`${post._id}-published.png`);
+        screenshots.push(finalScreenshot);
+      } catch (error) {
+        logger.warn('Failed to take final screenshot:', { error: error.message });
+      }
+
+      logger.info(`✅ Successfully published post to ${account.username}`);
+      
+      return {
+        success: true,
+        instagramUrl: publishResult.postUrl,
+        screenshots
+      };
+
+    } catch (error) {
+      logger.error(`❌ Failed to publish to account ${account.username}:`, {
+        error: error.message,
+        postId: post._id
+      });
+
+      // Скриншот ошибки
+      if (browser) {
+        try {
+          const pages = await browser.pages();
+          if (pages.length > 0) {
+            const errorScreenshot = path.join(
+              process.cwd(),
+              'screenshots',
+              `${post._id}-error-${Date.now()}.png`
+            );
+            await pages[0].screenshot({ path: errorScreenshot, fullPage: true });
+            screenshots.push(errorScreenshot);
+          }
+        } catch (screenshotError) {
+          logger.warn('Failed to take error screenshot:', { error: screenshotError.message });
+        }
+      }
+
+      return {
+        success: false,
+        error: error.message,
+        screenshots
+      };
+
+    } finally {
+      if (browser) {
+        try {
+          await this.puppeteerService.closeBrowser(browser, account.adspowerProfileId);
+        } catch (error) {
+          logger.error('Failed to close browser:', { error: error.message });
+        }
+      }
+    }
+  }
+
+  private resolveMediaPath(mediaUrl: string): string {
+    // Если это относительный путь
+    if (!path.isAbsolute(mediaUrl)) {
+      return path.join(process.cwd(), 'uploads', 'posts', mediaUrl);
+    }
+    
+    // Если это абсолютный путь
+    return mediaUrl;
+  }
+
+  private async getReadyToPublishPosts(): Promise<IPost[]> {
+    const now = new Date();
+    
+    return await Post.find({
+      status: 'scheduled',
+      scheduledAt: { $lte: now },
+      $or: [
+        { 'attempts.count': { $lt: 3 } }, // Максимум 3 попытки
+        { 'attempts.count': { $exists: false } }
+      ]
+    })
+    .populate('accountId')
+    .sort({ 'scheduling.priority': -1, scheduledAt: 1 }) // Сначала высокий приоритет
+    .limit(10); // Ограничиваем количество за раз
+  }
+
+  private async checkPendingTasks(): Promise<void> {
     if (!this.isRunning) return;
 
     try {
-      logger.debug('🔍 Checking for scheduled publications...');
+      const pendingPosts = await this.getReadyToPublishPosts();
+      
+      if (pendingPosts.length > 0) {
+        logger.info(`Found ${pendingPosts.length} pending posts to publish`);
+      }
 
-      // Получаем все активные аккаунты
-      const activeAccounts = await Account.find({ 
-        isRunning: true,
-        status: 'active' 
-      });
-
-      let scheduledCount = 0;
-
-      for (const account of activeAccounts) {
-        try {
-          if (await this.shouldSchedulePublication(account)) {
-            await this.scheduleNextPublication(account);
-            scheduledCount++;
-          }
-        } catch (error: any) {
-          logger.error(`Error checking account ${account.username}:`, error);
-          await this.handleAccountError(account, error);
+      // Очистка старых результатов (старше 24 часов)
+      const dayAgo = Date.now() - (24 * 60 * 60 * 1000);
+      for (const [postId, result] of this.publishResults.entries()) {
+        if (result.duration < dayAgo) {
+          this.publishResults.delete(postId);
         }
       }
 
-      if (scheduledCount > 0) {
-        logger.info(`📅 Scheduled ${scheduledCount} publications`);
-      }
-
-      this.emit('schedule-check-completed', { scheduledCount });
-
     } catch (error) {
-      logger.error('Error in processScheduledPublications:', error);
+      logger.error('Error checking pending tasks:', { error: error.message });
     }
   }
 
-  // Проверка необходимости планирования публикации
-  private async shouldSchedulePublication(account: IAccount): Promise<boolean> {
-    // Проверяем лимит постов в день
-    if (account.postsToday >= account.maxPostsPerDay) {
-      return false;
+  private async waitForActiveTasks(): Promise<void> {
+    let attempts = 0;
+    const maxAttempts = 30; // 30 секунд ожидания
+
+    while (this.activeTasks.size > 0 && attempts < maxAttempts) {
+      logger.info(`Waiting for ${this.activeTasks.size} active tasks to complete...`);
+      await this.wait(1000);
+      attempts++;
     }
 
-    // Проверяем есть ли уже запланированная публикация
-    const existingJob = this.publicationQueue.find(job => 
-      job.accountId === account._id.toString()
-    );
-    if (existingJob) {
-      return false;
+    if (this.activeTasks.size > 0) {
+      logger.warn(`Force stopping with ${this.activeTasks.size} active tasks remaining`);
     }
+  }
 
-    // Проверяем рабочие часы
+  private async safeDelay(): Promise<void> {
+    // Случайная задержка между постами (от 30 секунд до 5 минут)
+    const minDelay = parseInt(process.env.POST_DELAY_MIN || '30000'); // 30 секунд
+    const maxDelay = parseInt(process.env.POST_DELAY_MAX || '300000'); // 5 минут
+    const delay = Math.random() * (maxDelay - minDelay) + minDelay;
+
+    logger.info(`⏰ Safe delay: ${Math.round(delay / 1000)} seconds`);
+    await this.wait(delay);
+  }
+
+  private async wait(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async getStatus(): Promise<AutomationStatus> {
     const now = new Date();
-    const currentHour = now.getHours();
-    if (currentHour < account.workingHours.start || currentHour > account.workingHours.end) {
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    const completedToday = Array.from(this.publishResults.values())
+      .filter(result => 
+        result.success && 
+        new Date(result.duration + (Date.now() - result.duration)) >= todayStart
+      ).length;
+
+    const failedToday = Array.from(this.publishResults.values())
+      .filter(result => 
+        !result.success && 
+        new Date(result.duration + (Date.now() - result.duration)) >= todayStart
+      ).length;
+
+    const pendingPosts = await Post.countDocuments({
+      status: 'scheduled',
+      scheduledAt: { $lte: now }
+    });
+
+    const healthCheck = await this.puppeteerService.healthCheck();
+
+    return {
+      isRunning: this.isRunning,
+      currentTask: this.currentTask || undefined,
+      tasksInQueue: pendingPosts,
+      completedToday,
+      failedToday,
+      lastActivity: this.activeTasks.size > 0 ? new Date() : undefined,
+      activeBrowsers: healthCheck.activeBrowsers
+    };
+  }
+
+  async getPublishResult(postId: string): Promise<PublishResult | null> {
+    return this.publishResults.get(postId) || null;
+  }
+
+  async getAllResults(): Promise<PublishResult[]> {
+    return Array.from(this.publishResults.values());
+  }
+
+  async publishPostImmediately(postId: string): Promise<boolean> {
+    try {
+      if (this.activeTasks.size >= this.maxConcurrentBrowsers) {
+        throw new Error('Maximum concurrent tasks reached. Please try again later.');
+      }
+
+      const result = await this.publishPost(postId);
+      return result.success;
+    } catch (error) {
+      logger.error(`Failed to publish post immediately:`, { 
+        postId, 
+        error: error.message 
+      });
       return false;
     }
-
-    // Проверяем интервал с последней публикации
-    const lastPost = await Post.findOne({
-      accountId: account._id,
-      status: 'published'
-    }).sort({ publishedAt: -1 });
-
-    if (lastPost?.publishedAt) {
-      const timeSinceLastPost = now.getTime() - lastPost.publishedAt.getTime();
-      const minInterval = account.publishingIntervals.minHours * 60 * 60 * 1000;
-      
-      if (timeSinceLastPost < minInterval) {
-        return false;
-      }
-    }
-
-    // Проверяем наличие видео в Dropbox
-    try {
-      const videoFiles = await this.dropboxService.getVideoFiles(account.dropboxFolder);
-      if (videoFiles.length === 0) {
-        logger.warn(`No videos found for account ${account.username}`);
-        return false;
-      }
-    } catch (error) {
-      logger.error(`Error checking videos for account ${account.username}:`, error);
-      return false;
-    }
-
-    return true;
   }
 
-  // Планирование следующей публикации
-  private async scheduleNextPublication(account: IAccount): Promise<void> {
+  async testInstagramLogin(username: string, password: string, adspowerProfileId?: string): Promise<{
+    success: boolean;
+    error?: string;
+    screenshot?: string;
+  }> {
+    let browser = null;
     try {
-      // Получаем список видео
-      const videoFiles = await this.dropboxService.getVideoFiles(account.dropboxFolder);
-      if (videoFiles.length === 0) return;
+      logger.info(`Testing Instagram login for: ${username}`);
 
-      // Определяем следующее видео
-      const videoIndex = (account.currentVideoIndex - 1) % videoFiles.length;
-      const nextVideo = videoFiles[videoIndex];
+      browser = await this.puppeteerService.initBrowser(adspowerProfileId, username);
+      const page = await browser.newPage();
+      await this.puppeteerService.configurePage(page);
 
-      // Вычисляем время следующей публикации
-      const scheduledTime = this.calculateNextPublicationTime(account);
-
-      // Добавляем в очередь
-      const job: PublicationJob = {
-        accountId: account._id.toString(),
-        scheduledTime,
-        videoFileName: nextVideo.name,
-        retryCount: 0,
-        priority: 'normal'
-      };
-
-      this.publicationQueue.push(job);
+      const instagram = new InstagramAutomation(page, browser, this.puppeteerService);
       
-      // Сортируем очередь по времени
-      this.publicationQueue.sort((a, b) => 
-        a.scheduledTime.getTime() - b.scheduledTime.getTime()
-      );
-
-      logger.info(`📋 Scheduled publication for ${account.username}: ${nextVideo.name} at ${scheduledTime.toLocaleString()}`);
+      const result = await instagram.loginToInstagram(username, password);
       
-      this.emit('publication-scheduled', {
-        accountId: account._id,
-        username: account.username,
-        scheduledTime,
-        videoFileName: nextVideo.name
-      });
-
-    } catch (error) {
-      logger.error(`Error scheduling publication for ${account.username}:`, error);
-    }
-  }
-
-  // Вычисление времени следующей публикации
-  private calculateNextPublicationTime(account: IAccount): Date {
-    const now = new Date();
-    
-    // Базовый интервал между публикациями
-    const minHours = account.publishingIntervals.minHours;
-    const maxHours = account.publishingIntervals.maxHours;
-    
-    let intervalHours = minHours;
-    
-    // Добавляем случайность если включена
-    if (account.publishingIntervals.randomize) {
-      intervalHours = minHours + Math.random() * (maxHours - minHours);
-    }
-
-    // Равномерное распределение в течение дня
-    const remainingPostsToday = account.maxPostsPerDay - account.postsToday;
-    if (remainingPostsToday > 1) {
-      const endOfDay = new Date();
-      endOfDay.setHours(account.workingHours.end, 0, 0, 0);
-      
-      const timeUntilEndOfDay = endOfDay.getTime() - now.getTime();
-      const avgInterval = timeUntilEndOfDay / remainingPostsToday;
-      
-      intervalHours = Math.min(intervalHours, avgInterval / (60 * 60 * 1000));
-    }
-
-    const scheduledTime = new Date(now.getTime() + intervalHours * 60 * 60 * 1000);
-
-    // Проверяем рабочие часы
-    const scheduledHour = scheduledTime.getHours();
-    if (scheduledHour < account.workingHours.start) {
-      scheduledTime.setHours(account.workingHours.start, 0, 0, 0);
-    } else if (scheduledHour > account.workingHours.end) {
-      // Переносим на следующий день
-      const tomorrow = new Date(scheduledTime);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(account.workingHours.start, 0, 0, 0);
-      return tomorrow;
-    }
-
-    return scheduledTime;
-  }
-
-  // Обработка очереди публикаций
-  private async processPublicationQueue(): Promise<void> {
-    if (!this.isRunning || this.processingQueue) return;
-    if (this.publicationQueue.length === 0) return;
-    if (this.activePublications.size >= this.maxConcurrentPublications) return;
-
-    this.processingQueue = true;
-
-    try {
-      const now = new Date();
-      
-      // Находим задачи готовые к выполнению
-      const readyJobs = this.publicationQueue.filter(job => 
-        job.scheduledTime <= now && 
-        !this.activePublications.has(job.accountId)
-      );
-
-      for (const job of readyJobs.slice(0, this.maxConcurrentPublications - this.activePublications.size)) {
-        // Удаляем из очереди
-        const jobIndex = this.publicationQueue.indexOf(job);
-        this.publicationQueue.splice(jobIndex, 1);
-
-        // Добавляем в активные
-        this.activePublications.add(job.accountId);
-
-        // Выполняем публикацию асинхронно
-        this.executePublication(job).finally(() => {
-          this.activePublications.delete(job.accountId);
-        });
-      }
-
-    } finally {
-      this.processingQueue = false;
-    }
-  }
-
-  // Выполнение публикации
-  private async executePublication(job: PublicationJob): Promise<void> {
-    const startTime = Date.now();
-    
-    try {
-      logger.info(`🎬 Executing publication: ${job.videoFileName} for account ${job.accountId}`);
-
-      // Получаем аккаунт
-      const account = await Account.findById(job.accountId);
-      if (!account) {
-        throw new Error('Account not found');
-      }
-
-      // Проверяем статус аккаунта
-      if (!account.isRunning || account.status !== 'active') {
-        logger.warn(`Skipping publication for inactive account: ${account.username}`);
-        return;
-      }
-
-      // Скачиваем видео из Dropbox
-      const tempVideoPath = path.join(process.cwd(), 'temp', `${job.accountId}_${job.videoFileName}`);
-      const downloadResult = await this.dropboxService.downloadVideo(
-        account.dropboxFolder,
-        job.videoFileName,
-        tempVideoPath
-      );
-
-      if (!downloadResult.success) {
-        throw new Error(`Failed to download video: ${downloadResult.error}`);
-      }
-
-      // Создаем запись поста
-      const post = new Post({
-        accountId: account._id,
-        videoFileName: job.videoFileName,
-        caption: account.defaultCaption,
-        status: 'publishing'
-      });
-      await post.save();
-
+      let screenshot = '';
       try {
-        // Запускаем браузер AdsPower
-        const session = await this.adsPowerService.startBrowser(account.adsPowerProfileId!);
-
-        // Восстанавливаем сессию если возможно
-        const sessionRestored = await this.instagramService.restoreSession(session, account.username);
-        
-        if (!sessionRestored) {
-          // Авторизуемся заново
-          const loginResult = await this.instagramService.loginToInstagram(
-            session,
-            account.username,
-            account.decryptPassword(),
-            { saveSession: true }
-          );
-
-          if (!loginResult.success) {
-            throw new Error(`Login failed: ${loginResult.error}`);
-          }
-        }
-
-        // Публикуем видео
-        const hashtags = account.hashtagsTemplate?.split(' ').filter(tag => tag.trim()) || [];
-        const publishResult = await this.instagramService.publishVideoToReels(
-          session,
-          tempVideoPath,
-          account.defaultCaption,
-          { hashtags }
-        );
-
-        // Останавливаем браузер
-        await this.adsPowerService.stopBrowser(account.adsPowerProfileId!);
-
-        if (publishResult.success) {
-          // Успешная публикация
-          await this.handleSuccessfulPublication(account, post, publishResult.postUrl);
-          
-          const duration = Date.now() - startTime;
-          logger.info(`✅ Publication successful for ${account.username}: ${job.videoFileName} (${duration}ms)`);
-          
-          this.emit('publication-success', {
-            accountId: job.accountId,
-            username: account.username,
-            videoFileName: job.videoFileName,
-            postUrl: publishResult.postUrl,
-            duration
-          });
-
-        } else {
-          // Ошибка публикации
-          throw new Error(`Publication failed: ${publishResult.error}`);
-        }
-
-      } catch (publicationError: any) {
-        // Обновляем пост с ошибкой
-        await Post.findByIdAndUpdate(post._id, {
-          status: 'failed',
-          error: publicationError.message
-        });
-        
-        throw publicationError;
-      } finally {
-        // Удаляем временный файл
-        try {
-          const fs = require('fs');
-          if (fs.existsSync(tempVideoPath)) {
-            fs.unlinkSync(tempVideoPath);
-          }
-        } catch (cleanupError) {
-          logger.warn('Failed to cleanup temp file:', cleanupError);
-        }
+        screenshot = await instagram.takeScreenshot(`test-login-${username}-${Date.now()}.png`);
+      } catch (error) {
+        logger.warn('Failed to take test screenshot:', { error: error.message });
       }
-
-    } catch (error: any) {
-      await this.handlePublicationError(job, error);
-    }
-  }
-
-  // Обработка успешной публикации
-  private async handleSuccessfulPublication(
-    account: IAccount, 
-    post: any, 
-    postUrl?: string
-  ): Promise<void> {
-    // Обновляем пост
-    await Post.findByIdAndUpdate(post._id, {
-      status: 'published',
-      publishedAt: new Date(),
-      instagramUrl: postUrl
-    });
-
-    // Обновляем аккаунт
-    await Account.findByIdAndUpdate(account._id, {
-      $inc: { 
-        currentVideoIndex: 1,
-        postsToday: 1,
-        'stats.totalPosts': 1,
-        'stats.successfulPosts': 1
-      },
-      'stats.lastSuccessfulPost': new Date(),
-      lastActivity: new Date(),
-      status: 'active'
-    });
-
-    // Планируем следующую публикацию если нужно
-    const updatedAccount = await Account.findById(account._id);
-    if (updatedAccount && await this.shouldSchedulePublication(updatedAccount)) {
-      setTimeout(() => {
-        this.scheduleNextPublication(updatedAccount);
-      }, 60000); // Через минуту
-    }
-  }
-
-  // Обработка ошибок публикации
-  private async handlePublicationError(job: PublicationJob, error: any): Promise<void> {
-    const account = await Account.findById(job.accountId);
-    if (!account) return;
-
-    logger.error(`❌ Publication error for ${account.username}: ${error.message}`);
-
-    // Обновляем статистику ошибок аккаунта
-    await Account.findByIdAndUpdate(job.accountId, {
-      $inc: { 'stats.failedPosts': 1 },
-      'stats.lastError': error.message,
-      lastActivity: new Date()
-    });
-
-    // Определяем нужно ли повторить попытку
-    if (job.retryCount < this.settings.maxRetries) {
-      // Повторная попытка
-      const retryJob: PublicationJob = {
-        ...job,
-        retryCount: job.retryCount + 1,
-        scheduledTime: new Date(Date.now() + this.settings.retryDelay * 60 * 1000),
-        priority: 'high'
-      };
-
-      this.publicationQueue.push(retryJob);
-      this.publicationQueue.sort((a, b) => 
-        a.scheduledTime.getTime() - b.scheduledTime.getTime()
-      );
-
-      logger.info(`🔄 Scheduled retry ${retryJob.retryCount}/${this.settings.maxRetries} for ${account.username}`);
-      
-    } else {
-      // Превышено количество попыток
-      logger.error(`💥 Max retries exceeded for ${account.username}, stopping account`);
-      
-      await Account.findByIdAndUpdate(job.accountId, {
-        isRunning: false,
-        status: 'error'
-      });
-
-      this.emit('account-stopped', {
-        accountId: job.accountId,
-        username: account.username,
-        reason: 'Max retries exceeded',
-        error: error.message
-      });
-    }
-
-    this.emit('publication-error', {
-      accountId: job.accountId,
-      username: account.username,
-      videoFileName: job.videoFileName,
-      error: error.message,
-      retryCount: job.retryCount
-    });
-  }
-
-  // Обработка ошибок аккаунта
-  private async handleAccountError(account: IAccount, error: any): Promise<void> {
-    logger.error(`Account error for ${account.username}:`, error);
-
-    // Временно останавливаем аккаунт при критических ошибках
-    if (error.message?.includes('banned') || error.message?.includes('blocked')) {
-      await Account.findByIdAndUpdate(account._id, {
-        isRunning: false,
-        status: 'banned'
-      });
-
-      this.emit('account-banned', {
-        accountId: account._id,
-        username: account.username,
-        error: error.message
-      });
-    }
-  }
-
-  // Сброс ежедневных счетчиков
-  private async resetDailyCounters(): Promise<void> {
-    try {
-      const result = await Account.updateMany({}, { 
-        postsToday: 0 
-      });
-      
-      logger.info(`🔄 Daily counters reset for ${result.modifiedCount} accounts`);
-      this.emit('daily-reset', { accountsReset: result.modifiedCount });
-      
-    } catch (error) {
-      logger.error('Error resetting daily counters:', error);
-    }
-  }
-
-  // Мониторинг здоровья системы
-  private async performHealthChecks(): Promise<void> {
-    try {
-      // Проверяем Dropbox токен
-      const dropboxValid = await this.dropboxService.validateAccessToken();
-      if (!dropboxValid || this.dropboxService.isTokenExpiringSoon()) {
-        this.emit('dropbox-token-warning', {
-          valid: dropboxValid,
-          expiring: this.dropboxService.isTokenExpiringSoon(),
-          timeRemaining: this.dropboxService.getTokenTimeRemaining()
-        });
-      }
-
-      // Проверяем AdsPower подключение
-      const adsPowerStatus = await this.adsPowerService.checkConnection();
-      if (!adsPowerStatus) {
-        this.emit('adspower-connection-error');
-      }
-
-      // Проверяем зависшие публикации
-      const oldActivePublications = Array.from(this.activePublications).filter(() => {
-        // Упрощенная проверка на зависшие публикации
-        return false;
-      });
-
-      if (oldActivePublications.length > 0) {
-        oldActivePublications.forEach(accountId => {
-          this.activePublications.delete(accountId);
-        });
-        
-        logger.warn(`Cleaned up ${oldActivePublications.length} stuck publications`);
-      }
-
-      this.emit('health-check-completed', {
-        dropboxValid,
-        adsPowerStatus,
-        activePublications: this.activePublications.size,
-        queueLength: this.publicationQueue.length
-      });
-
-    } catch (error) {
-      logger.error('Health check error:', error);
-    }
-  }
-
-  // Очистка старых данных
-  private async performCleanup(): Promise<void> {
-    try {
-      // Очищаем старые посты (старше 30 дней)
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-      const deletedPosts = await Post.deleteMany({
-        createdAt: { $lt: thirtyDaysAgo },
-        status: { $in: ['failed', 'published'] }
-      });
-
-      // Очищаем кеш Dropbox
-      if (this.dropboxService && typeof (this.dropboxService as any).cleanupCache === 'function') {
-        (this.dropboxService as any).cleanupCache();
-      }
-
-      logger.info(`🧹 Cleanup completed: ${deletedPosts.deletedCount} old posts removed`);
-      
-    } catch (error) {
-      logger.error('Cleanup error:', error);
-    }
-  }
-
-  // Получение статистики автоматизации
-  async getStats(): Promise<AutomationStats> {
-    try {
-      const totalAccounts = await Account.countDocuments({});
-      const activeAccounts = await Account.countDocuments({ status: 'active' });
-      const runningAccounts = await Account.countDocuments({ isRunning: true });
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      const publicationsToday = await Post.countDocuments({
-        createdAt: { $gte: today }
-      });
-
-      const successfulToday = await Post.countDocuments({
-        createdAt: { $gte: today },
-        status: 'published'
-      });
-
-      const failedToday = await Post.countDocuments({
-        createdAt: { $gte: today },
-        status: 'failed'
-      });
-
-      const nextJob = this.publicationQueue[0];
 
       return {
-        totalAccounts,
-        activeAccounts,
-        runningAccounts,
-        publicationsToday,
-        successfulToday,
-        failedToday,
-        nextScheduledPublication: nextJob?.scheduledTime,
-        systemUptime: Date.now() - this.startTime.getTime()
+        success: result.success,
+        error: result.error,
+        screenshot
       };
 
     } catch (error) {
-      logger.error('Error getting automation stats:', error);
-      throw error;
-    }
-  }
-
-  // Ручной запуск публикации для аккаунта
-  async publishNow(accountId: string): Promise<boolean> {
-    try {
-      const account = await Account.findById(accountId);
-      if (!account) {
-        throw new Error('Account not found');
-      }
-
-      // Получаем следующее видео
-      const videoFiles = await this.dropboxService.getVideoFiles(account.dropboxFolder);
-      if (videoFiles.length === 0) {
-        throw new Error('No videos found');
-      }
-
-      const videoIndex = (account.currentVideoIndex - 1) % videoFiles.length;
-      const nextVideo = videoFiles[videoIndex];
-
-      // Добавляем в очередь с высоким приоритетом
-      const job: PublicationJob = {
-        accountId: accountId,
-        scheduledTime: new Date(), // Сейчас
-        videoFileName: nextVideo.name,
-        retryCount: 0,
-        priority: 'high'
+      logger.error(`Test login failed for ${username}:`, { error: error.message });
+      return {
+        success: false,
+        error: error.message
       };
-
-      this.publicationQueue.unshift(job); // В начало очереди
-
-      logger.info(`📤 Manual publication queued for ${account.username}: ${nextVideo.name}`);
-      
-      this.emit('manual-publication-queued', {
-        accountId,
-        username: account.username,
-        videoFileName: nextVideo.name
-      });
-
-      return true;
-
-    } catch (error: any) {
-      logger.error(`Manual publish error for account ${accountId}:`, error);
-      return false;
+    } finally {
+      if (browser) {
+        await this.puppeteerService.closeBrowser(browser, adspowerProfileId);
+      }
     }
   }
-
-  // Получение очереди публикаций
-  getPublicationQueue(): PublicationJob[] {
-    return [...this.publicationQueue].slice(0, 20); // Первые 20 задач
-  }
-
-  // Очистка очереди для аккаунта
-  clearAccountQueue(accountId: string): number {
-    const initialLength = this.publicationQueue.length;
-    this.publicationQueue = this.publicationQueue.filter(job => 
-      job.accountId !== accountId
-    );
-    
-    const removedCount = initialLength - this.publicationQueue.length;
-    
-    if (removedCount > 0) {
-      logger.info(`Cleared ${removedCount} queued publications for account ${accountId}`);
-    }
-    
-    return removedCount;
-  }
-
-  // Проверка работы системы
-  isSystemRunning(): boolean {
-    return this.isRunning;
-  }
-
-  // Получение времени работы системы
-  getUptime(): number {
-    return Date.now() - this.startTime.getTime();
-  }
-}
-
-// Singleton экземпляр
-let automationServiceInstance: AutomationService | null = null;
-
-export const getAutomationService = (): AutomationService => {
-  if (!automationServiceInstance) {
-    automationServiceInstance = new AutomationService();
-  }
-  return automationServiceInstance;
-}; 
+} 

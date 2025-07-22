@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 
 import { postsApi, Post, CreatePostData } from '../services/postsApi';
 import { accountsApi } from '../services/accountsApi';
+import { automationApi } from '../services/automationApi';
 
 export const PostsPage: React.FC = () => {
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -24,6 +25,9 @@ export const PostsPage: React.FC = () => {
   const [previewUrl, setPreviewUrl] = useState<string>('');
   const [isDragOver, setIsDragOver] = useState(false);
   
+  // Добавляем состояние для автоматизации
+  const [publishingPosts, setPublishingPosts] = useState<Set<string>>(new Set());
+
   const queryClient = useQueryClient();
 
   // Получение списка постов
@@ -57,6 +61,17 @@ export const PostsPage: React.FC = () => {
     {
       refetchInterval: 30000,
       staleTime: 15000
+    }
+  );
+
+  // Получение статуса автоматизации
+  const { data: automationStatus } = useQuery(
+    ['automation-status'],
+    automationApi.getStatus,
+    {
+      refetchInterval: 10000, // Обновляем каждые 10 секунд
+      retry: 1,
+      staleTime: 5000
     }
   );
 
@@ -143,6 +158,31 @@ export const PostsPage: React.FC = () => {
       },
       onError: (error: any) => {
         toast.error(error.message || 'Ошибка дублирования поста');
+      }
+    }
+  );
+
+  // Публикация через автоматизацию
+  const automationPublishMutation = useMutation(
+    automationApi.publishNow,
+    {
+      onSuccess: (data, postId) => {
+        toast.success('🤖 Пост отправлен в автоматизацию!');
+        setPublishingPosts(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(postId);
+          return newSet;
+        });
+        queryClient.invalidateQueries(['posts']);
+        queryClient.invalidateQueries(['posts-stats']);
+      },
+      onError: (error: any, postId) => {
+        toast.error(`Ошибка автоматизации: ${error.message}`);
+        setPublishingPosts(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(postId);
+          return newSet;
+        });
       }
     }
   );
@@ -299,12 +339,45 @@ export const PostsPage: React.FC = () => {
     scheduledToday: 0
   };
 
+  // Обработчик публикации через автоматизацию
+  const handleAutomationPublish = (postId: string) => {
+    setPublishingPosts(prev => new Set([...prev, postId]));
+    automationPublishMutation.mutate(postId);
+  };
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-white mb-2">Планировщик постов</h1>
         <p className="text-gray-400">Создание и планирование публикаций для Instagram</p>
       </div>
+
+      {/* Статус автоматизации */}
+      {automationStatus && (
+        <Card className="mb-6">
+          <div className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-3 h-3 rounded-full ${automationStatus.automation.isRunning ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`}></div>
+                <span className="text-white font-medium">
+                  Автоматизация Instagram: {automationStatus.automation.isRunning ? 'Активна' : 'Неактивна'}
+                </span>
+                {automationStatus.automation.currentTask && (
+                  <span className="text-sm text-blue-400">
+                    {automationStatus.automation.currentTask}
+                  </span>
+                )}
+              </div>
+              
+              <div className="flex items-center gap-4 text-sm text-gray-400">
+                <span>В очереди: {automationStatus.automation.tasksInQueue}</span>
+                <span>Опубликовано сегодня: {automationStatus.automation.completedToday}</span>
+                <span>Браузеров: {automationStatus.automation.activeBrowsers}</span>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Статистика */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -706,13 +779,39 @@ export const PostsPage: React.FC = () => {
                     
                     <div className="flex gap-2 flex-wrap">
                       {post.status === 'scheduled' && (
-                        <Button
-                          size="sm"
-                          onClick={() => publishNowMutation.mutate(post._id)}
-                          loading={publishNowMutation.isLoading}
-                        >
-                          Опубликовать сейчас
-                        </Button>
+                        <>
+                          {/* Обычная публикация */}
+                          <Button
+                            size="sm"
+                            onClick={() => publishNowMutation.mutate(post._id)}
+                            loading={publishNowMutation.isLoading}
+                          >
+                            📤 Опубликовать
+                          </Button>
+                          
+                          {/* Публикация через автоматизацию */}
+                          {automationStatus?.automation.isRunning && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => handleAutomationPublish(post._id)}
+                              loading={publishingPosts.has(post._id) || automationPublishMutation.isLoading}
+                              className="bg-purple-600 hover:bg-purple-700"
+                            >
+                              🤖 Автопубликация
+                            </Button>
+                          )}
+                        </>
+                      )}
+                      
+                      {/* Статус автоматизации для поста */}
+                      {publishingPosts.has(post._id) && (
+                        <div className="flex items-center gap-2 text-sm text-purple-400">
+                          <svg className="h-4 w-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                          Обрабатывается...
+                        </div>
                       )}
                       
                       {(post.status === 'draft' || post.status === 'scheduled' || post.status === 'failed') && (

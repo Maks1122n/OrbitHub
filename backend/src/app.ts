@@ -2,242 +2,74 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import compression from 'compression';
 import path from 'path';
-
-console.log('🟡 App.ts starting - imports loaded');
-import { connectDatabase } from './config/database';
-import { config } from './config/env';
-import { errorHandler, notFoundHandler } from './middleware/errorHandler';
-import { createDefaultAdmin } from './utils/createAdmin';
-import { initializeAdsPower } from './config/adspower';
-import { getAutomationService } from './services/AutomationService';
+import { connectDB } from './config/database';
 import logger from './utils/logger';
-import fs from 'fs';
 
-// Импорт роутов
+// Routes
 import authRoutes from './routes/auth';
-import adsPowerRoutes from './routes/adspower';
 import accountRoutes from './routes/accounts';
-import dropboxRoutes from './routes/dropbox';
-import instagramRoutes from './routes/instagram';
+import postRoutes from './routes/posts';
 import automationRoutes from './routes/automation';
-import postsRoutes from './routes/posts';
-import dashboardRoutes from './routes/dashboard';
-import logsRoutes from './routes/logs';
-
-// Создание папок
-const requiredDirs = ['logs', 'uploads', 'temp', 'cache', 'cache/dropbox', 'cache/instagram'];
-requiredDirs.forEach(dir => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-});
 
 const app = express();
 
-// Инициализация при старте  
-const initializeApp = async () => {
-  try {
-    console.log('🟢 initializeApp started');
-    logger.info('🚀 Starting OrbitHub initialization...');
-    
-    // Подключение к базе данных
-    try {
-      console.log('🔌 Attempting database connection...');
-      await connectDatabase();
-      console.log('✅ Database connected successfully');
-      logger.info('✅ Database connected successfully');
-    } catch (error) {
-      console.log('❌ Database connection failed:', error);
-      logger.error('❌ Database connection failed:', error);
-      // Продолжаем работу без БД для диагностики
-    }
-    
-    // Создание админа по умолчанию
-    try {
-      console.log('👤 Attempting to create default admin...');
-      await createDefaultAdmin();
-      console.log('✅ Default admin created/verified');
-      logger.info('✅ Default admin created/verified');
-    } catch (error) {
-      console.log('⚠️ Default admin creation failed:', error);
-      logger.warn('⚠️ Default admin creation failed:', error);
-    }
-    
-    // AdsPower инициализация (не критично)
-    try {
-      await initializeAdsPower();
-      logger.info('✅ AdsPower initialized');
-    } catch (error) {
-      logger.warn('⚠️ AdsPower initialization failed (expected in cloud):', error);
-    }
-    
-    console.log('✅ initializeApp completed successfully');
-    logger.info('✅ Application initialization completed');
-  } catch (error) {
-    console.log('❌ initializeApp failed:', error);
-    logger.error('❌ Application initialization failed:', error);
-    // Не завершаем процесс, чтобы можно было диагностировать
-  }
-};
-
-// Запуск инициализации
-console.log('🟡 Starting app initialization...');
-initializeApp();
-console.log('🟡 App initialization called...');
+// Database connection
+connectDB();
 
 // Middleware
-app.use(compression()); // Сжатие ответов
-app.use(helmet({
-  contentSecurityPolicy: false, // Отключаем для фронтенда
-  crossOriginEmbedderPolicy: false
-}));
-
-app.use(cors({
-      origin: config.nodeEnv === 'production' 
-    ? [process.env.FRONTEND_URL || 'https://orbithub.onrender.com'] 
-    : ['http://localhost:3000', 'http://localhost:5173'],
-  credentials: true
-}));
-
-app.use(morgan(config.nodeEnv === 'production' ? 'combined' : 'dev'));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
-// Статические файлы
-app.use('/uploads', express.static('uploads'));
-app.use('/temp', express.static('temp'));
-
-// В продакшене раздаем frontend
-if (config.nodeEnv === 'production') {
-  // Раздаем статические файлы фронтенда
-  const frontendPath = path.join(__dirname, '../../frontend/dist');
-  if (fs.existsSync(frontendPath)) {
-    app.use(express.static(frontendPath));
+app.use(helmet());
+app.use(cors());
+app.use(morgan('combined', {
+  stream: {
+    write: (message: string) => logger.info(message.trim())
   }
-}
+}));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-// Health check расширенный
-app.get('/health', async (req, res) => {
-  try {
-    const { checkAdsPowerConnection } = await import('./config/adspower');
-    const { DropboxService } = await import('./services/DropboxService');
-    
-    let adsPowerStatus = false;
-    try {
-      adsPowerStatus = await checkAdsPowerConnection();
-    } catch (error) {
-      // AdsPower недоступен в облачной среде
-    }
-        
-        let dropboxStatus = false;
-        let dropboxInfo = null;
-        try {
-          const dropboxService = DropboxService.getInstance();
-          dropboxStatus = await dropboxService.validateAccessToken();
-          if (dropboxStatus) {
-            const timeRemaining = dropboxService.getTokenTimeRemaining();
-            dropboxInfo = {
-              tokenExpiring: dropboxService.isTokenExpiringSoon(),
-              timeRemaining
-            };
-          }
-        } catch (error) {
-          // Dropbox service not initialized
-        }
+// Static files
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+app.use('/screenshots', express.static(path.join(__dirname, '../screenshots')));
 
-    // Проверяем автоматизацию
-    const automationService = getAutomationService();
-    const automationRunning = automationService.isSystemRunning();
-        
-        res.json({ 
-          status: 'OK', 
-          timestamp: new Date().toISOString(),
-          environment: config.nodeEnv,
-      uptime: process.uptime(),
-          services: {
-            database: 'connected',
-            adspower: adsPowerStatus ? 'connected' : 'disconnected',
-        dropbox: dropboxStatus ? 'connected' : 'disconnected',
-        automation: automationRunning ? 'running' : 'stopped'
-          },
-      dropboxInfo,
-      memory: process.memoryUsage(),
-      version: '1.0.0'
-        });
-  } catch (error: any) {
-        res.status(500).json({
-          status: 'ERROR',
-      error: error.message
-        });
-      }
-    });
-
-// Simple status endpoint
-app.get('/status', (req, res) => {
-      res.json({
-    status: 'OK',
-        timestamp: new Date().toISOString(),
-    environment: config.nodeEnv
-      });
-    });
-
-// Middleware для отслеживания всех API запросов
-app.use('/api/*', (req, res, next) => {
-  console.log(`📥 API Request: ${req.method} ${req.originalUrl}`);
-  next();
-});
-
-// API Routes
-console.log('🔗 Setting up API routes...');
+// Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/adspower', adsPowerRoutes);
 app.use('/api/accounts', accountRoutes);
-app.use('/api/posts', postsRoutes);
-app.use('/api/dropbox', dropboxRoutes);
-app.use('/api/instagram', instagramRoutes);
+app.use('/api/posts', postRoutes);
 app.use('/api/automation', automationRoutes);
-app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/logs', logsRoutes);
-console.log('✅ API routes configured');
 
-// В продакшене все неизвестные роуты отправляем на фронтенд
-if (config.nodeEnv === 'production') {
-  app.get('*', (req, res) => {
-    const frontendPath = path.join(__dirname, '../../frontend/dist/index.html');
-    if (fs.existsSync(frontendPath)) {
-      res.sendFile(frontendPath);
-    } else {
-      res.status(404).json({ error: 'Frontend not found' });
-    }
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    service: 'orbithub-backend'
   });
-}
-
-// Error handling
-app.use(notFoundHandler);
-app.use(errorHandler);
-
-const PORT = config.port;
-
-console.log(`🟡 About to start server on port ${PORT}...`);
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 SERVER STARTED on port ${PORT}`);
-  logger.info(`🚀 OrbitHub server running on port ${PORT} in ${config.nodeEnv} mode`);
-  logger.info(`📊 Health check: http://localhost:${PORT}/health`);
-  if (config.nodeEnv === 'production') {
-    logger.info(`🌐 Frontend served from: http://localhost:${PORT}`);
-  }
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM received, shutting down gracefully');
-  const automationService = getAutomationService();
-  if (automationService.isSystemRunning()) {
-    automationService.stop();
-  }
-  process.exit(0);
+// Error handling middleware
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  logger.error('Unhandled error:', err);
+  res.status(500).json({ 
+    success: false, 
+    error: 'Internal server error' 
+  });
+});
+
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({ 
+    success: false, 
+    error: 'Route not found' 
+  });
+});
+
+const PORT = parseInt(process.env.PORT || '5000', 10);
+
+app.listen(PORT, () => {
+  logger.info(`🚀 Server running on port ${PORT}`);
+  logger.info(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+  logger.info(`🤖 Puppeteer automation system ready`);
 });
 
 export default app; 
