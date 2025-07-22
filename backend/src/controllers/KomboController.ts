@@ -205,7 +205,7 @@ export class KomboController {
 
   static async uploadMedia(req: AuthRequest, res: Response) {
     try {
-      const files = req.files as Express.Multer.File[];
+      const files = req.files as any[];
       if (!files || files.length === 0) {
         return res.status(400).json({ error: 'Нет файлов для загрузки' });
       }
