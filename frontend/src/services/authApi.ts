@@ -50,17 +50,12 @@ export const authApi = {
   // Регистрация
   register: async (data: RegisterData): Promise<AuthResponse> => {
     try {
-      const response = await api.post<AuthResponse>('/auth/register', data);
+      const response = await api.post('/auth/register', data);
       
-      // Автоматически входим после регистрации
-      if (response.success && response.data) {
-        localStorage.setItem('authToken', response.data.token);
-        localStorage.setItem('user', JSON.stringify(response.data.user));
-      }
-      
-      return response.data;
+      // Backend возвращает структуру { success: boolean, data: { user, token } }
+      return response;
     } catch (error) {
-      console.error('Registration error:', error);
+      console.error('🔑 API: Register error:', error);
       throw error;
     }
   },
