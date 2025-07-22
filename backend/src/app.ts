@@ -28,6 +28,7 @@ import automationRoutes from './routes/automation';
 import adsPowerRoutes from './routes/adspower';
 import proxyRoutes from './routes/proxy';
 import accountProxyRoutes from './routes/accountProxy';
+import komboRoutes from './routes/kombo';
 
 const app = express();
 
@@ -45,10 +46,10 @@ app.use(helmet({
 }));
 app.use(cors());
 app.use(morgan('combined', {
-  stream: {
+        stream: {
     write: (message: string) => logger.info(message.trim())
-  }
-}));
+        }
+      }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -67,15 +68,16 @@ app.use('/api/automation', automationRoutes);
 app.use('/api/adspower', adsPowerRoutes);
 app.use('/api/proxy', proxyRoutes);
 app.use('/api/account-proxy', accountProxyRoutes);
+app.use('/api/kombo', komboRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ 
+      res.json({
     status: 'ok', 
-    timestamp: new Date().toISOString(),
+        timestamp: new Date().toISOString(),
     service: 'orbithub-backend'
-  });
-});
+      });
+    });
 
 // SPA fallback - serve index.html for all non-API routes
 app.get('*', (req, res) => {
@@ -94,8 +96,8 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   res.status(500).json({ 
     success: false, 
     error: 'Internal server error' 
-  });
-});
+      });
+    });
 
 const PORT = parseInt(process.env.PORT || '5000', 10);
 

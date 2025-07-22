@@ -17,6 +17,7 @@ import { BulkOperationsPage } from './pages/BulkOperationsPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import ProxyPage from './pages/ProxyPage';
 import AccountProxyPage from './pages/AccountProxyPage';
+import KomboPage from './pages/KomboPage';
 
 // Создаем заглушки для оставшихся страниц
 const DropboxPage = () => (
@@ -185,15 +186,26 @@ function App() {
           <div className="min-h-screen bg-gray-900">
             <Routes>
               <Route path="/login" element={<Login />} />
-              <Route 
-                path="/" 
+              <Route
+                path="/kombo"
                 element={
                   <ProtectedRoute>
                     <Layout>
-                      <MainDashboard />
+                      <KomboPage />
                     </Layout>
                   </ProtectedRoute>
-                } 
+                }
+              />
+              
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <Dashboard />
+                    </Layout>
+                  </ProtectedRoute>
+                }
               />
               <Route 
                 path="/dashboard" 
