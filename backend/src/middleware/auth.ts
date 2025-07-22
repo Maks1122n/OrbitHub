@@ -13,7 +13,8 @@ export interface AuthRequest extends Request {
   body: any;
   query: any;
   headers: any;
-  file?: any; // Для multer файлов
+  file?: any; // Для multer одиночного файла
+  files?: any; // Для multer множественных файлов
 }
 
 export const authenticateToken = async (
