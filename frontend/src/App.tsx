@@ -15,6 +15,8 @@ import { AdsPowerTest } from './pages/AdsPowerTest';
 import { TemplatesPage } from './pages/TemplatesPage';
 import { BulkOperationsPage } from './pages/BulkOperationsPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
+import ProxyPage from './pages/ProxyPage';
+import AccountProxyPage from './pages/AccountProxyPage';
 
 // Создаем заглушки для оставшихся страниц
 const DropboxPage = () => (
@@ -299,6 +301,26 @@ function App() {
                   <ProtectedRoute>
                     <Layout>
                       <SettingsPage />
+                    </Layout>
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/proxy" 
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <ProxyPage />
+                    </Layout>
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/account-proxy" 
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <AccountProxyPage />
                     </Layout>
                   </ProtectedRoute>
                 } 

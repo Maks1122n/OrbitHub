@@ -1,6 +1,7 @@
 import { Schema, model, Document } from 'mongoose';
 import CryptoJS from 'crypto-js';
 import { config } from '../config/env';
+import { IProxy } from './Proxy';
 
 export interface IAccount extends Document {
   _id: string;
@@ -45,8 +46,15 @@ export interface IAccount extends Document {
   // AdsPower интеграция
   adsPowerProfileId?: string;
   adsPowerGroupId?: string;
+  adsPowerStatus: 'none' | 'creating' | 'created' | 'error';
+  adsPowerLastSync?: Date;
+  adsPowerError?: string;
   
-  // Прокси настройки
+  // Прокси привязка
+  proxyId?: string; // ссылка на Proxy документ
+  proxy?: IProxy;   // populated поле
+  
+  // Прокси настройки (legacy для обратной совместимости)
   proxySettings?: {
     enabled: boolean;
     type: 'http' | 'socks5';
@@ -212,8 +220,25 @@ const accountSchema = new Schema<IAccount>({
   adsPowerGroupId: { 
     type: String 
   },
+  adsPowerStatus: {
+    type: String,
+    enum: ['none', 'creating', 'created', 'error'],
+    default: 'none'
+  },
+  adsPowerLastSync: {
+    type: Date
+  },
+  adsPowerError: {
+    type: String
+  },
   
-  // Прокси настройки
+  // Прокси привязка
+  proxyId: {
+    type: Schema.Types.ObjectId,
+    ref: 'Proxy'
+  },
+  
+  // Прокси настройки (legacy)
   proxySettings: {
     enabled: { 
       type: Boolean, 

@@ -26,6 +26,8 @@ import accountRoutes from './routes/accounts';
 import postRoutes from './routes/posts';
 import automationRoutes from './routes/automation';
 import adsPowerRoutes from './routes/adspower';
+import proxyRoutes from './routes/proxy';
+import accountProxyRoutes from './routes/accountProxy';
 
 const app = express();
 
@@ -38,15 +40,17 @@ const initializeDatabase = async () => {
 initializeDatabase();
 
 // Middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false
+}));
 app.use(cors());
 app.use(morgan('combined', {
   stream: {
     write: (message: string) => logger.info(message.trim())
   }
 }));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Static files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
@@ -61,6 +65,8 @@ app.use('/api/accounts', accountRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/automation', automationRoutes);
 app.use('/api/adspower', adsPowerRoutes);
+app.use('/api/proxy', proxyRoutes);
+app.use('/api/account-proxy', accountProxyRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
