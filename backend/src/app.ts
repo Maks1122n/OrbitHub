@@ -12,6 +12,7 @@ import authRoutes from './routes/auth';
 import accountRoutes from './routes/accounts';
 import postRoutes from './routes/posts';
 import automationRoutes from './routes/automation';
+import adsPowerRoutes from './routes/adspower';
 
 const app = express();
 
@@ -46,6 +47,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/accounts', accountRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/automation', automationRoutes);
+app.use('/api/adspower', adsPowerRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -51,13 +51,20 @@ export class DropboxService {
     const token = accessToken || config.dropbox.accessToken;
     
     if (!token) {
-      throw new Error('Dropbox access token not configured');
+      console.warn('⚠️  Dropbox access token not configured - Dropbox functionality disabled');
+      this.dbx = null;
+      return;
     }
 
-    this.dbx = new Dropbox({ 
-      accessToken: token,
-      fetch: require('node-fetch')
-    });
+    try {
+      this.dbx = new Dropbox({ 
+        accessToken: token,
+        fetch: require('node-fetch')
+      });
+    } catch (error) {
+      console.error('❌ Failed to initialize Dropbox service:', error);
+      this.dbx = null;
+    }
 
     this.cacheDir = path.join(process.cwd(), 'cache', 'dropbox');
     this.tokenLastUpdated = new Date();
@@ -124,6 +131,11 @@ export class DropboxService {
 
   // Проверка токена доступа
   async validateAccessToken(): Promise<boolean> {
+    if (!this.dbx) {
+      logger.warn('Dropbox service not initialized - token validation skipped');
+      return false;
+    }
+    
     try {
       await this.dbx.usersGetCurrentAccount();
       logger.info('Dropbox access token is valid');
@@ -136,6 +148,11 @@ export class DropboxService {
 
   // Получение информации об аккаунте
   async getAccountInfo(): Promise<any> {
+    if (!this.dbx) {
+      logger.warn('Dropbox service not initialized - account info unavailable');
+      return null;
+    }
+    
     try {
       const response = await this.dbx.usersGetCurrentAccount();
       return {
