@@ -23,8 +23,15 @@ export class AuthController {
       }
 
       // Проверяем пароль
+      console.log('🔑 AUTH: Checking password for user:', user.email);
+      console.log('🔑 AUTH: User found in DB:', !!user);
+      console.log('🔑 AUTH: User active status:', user.isActive);
+      
       const isValidPassword = await user.comparePassword(password);
+      console.log('🔑 AUTH: Password validation result:', isValidPassword);
+      
       if (!isValidPassword) {
+        console.log('🔑 AUTH: Password invalid - sending 401');
         res.status(401).json({
           success: false,
           error: 'Invalid email or password'
@@ -32,6 +39,8 @@ export class AuthController {
         return;
       }
 
+      console.log('🔑 AUTH: Password valid - generating tokens');
+      
       // Генерируем токены
       const tokens = generateTokens({
         userId: user._id.toString(),
@@ -44,6 +53,7 @@ export class AuthController {
         lastLogin: new Date()
       });
 
+      console.log('🔑 AUTH: Login successful - sending response');
       logger.info(`User logged in: ${user.email}`);
 
       res.json({
