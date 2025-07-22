@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import path from 'path';
 import { connectDatabase } from './config/database';
+import { createDefaultAdmin } from './utils/createAdmin';
 import logger from './utils/logger';
 
 // Routes
@@ -14,8 +15,13 @@ import automationRoutes from './routes/automation';
 
 const app = express();
 
-// Database connection
-connectDatabase();
+// Database connection and setup
+const initializeDatabase = async () => {
+  await connectDatabase();
+  await createDefaultAdmin(); // Создаём админа по умолчанию
+};
+
+initializeDatabase();
 
 // Middleware
 app.use(helmet());
