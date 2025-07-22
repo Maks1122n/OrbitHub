@@ -65,10 +65,10 @@ app.use('/api/auth', authRoutes);
 app.use('/api/accounts', accountRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/automation', automationRoutes);
-app.use('/api/adspower', adsPowerRoutes);
+app.use('/api/kombo', komboRoutes);
+app.use('/api/kombo-new', komboRoutes); // Новый KOMBO с Pupiter
 app.use('/api/proxy', proxyRoutes);
 app.use('/api/account-proxy', accountProxyRoutes);
-app.use('/api/kombo', komboRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

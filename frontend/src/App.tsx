@@ -18,6 +18,7 @@ import { AnalyticsPage } from './pages/AnalyticsPage';
 import ProxyPage from './pages/ProxyPage';
 import AccountProxyPage from './pages/AccountProxyPage';
 import KomboPage from './pages/KomboPage';
+import KomboNew from './pages/KomboNew';
 
 // Создаем заглушки для оставшихся страниц
 const DropboxPage = () => (
@@ -192,6 +193,16 @@ function App() {
                   <ProtectedRoute>
                     <Layout>
                       <KomboPage />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/kombo-new"
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <KomboNew />
                     </Layout>
                   </ProtectedRoute>
                 }

@@ -1,35 +1,27 @@
-import { Router } from 'express';
-import { KomboController } from '../controllers/KomboController';
+import express from 'express';
 import { auth } from '../middleware/auth';
+import { KomboController } from '../controllers/KomboController';
 
-const router = Router();
+const router = express.Router();
 
 // Все маршруты требуют аутентификации
 router.use(auth);
 
-// 📋 Проекты KOMBO
-router.get('/', KomboController.getProjects);
-router.post('/', KomboController.createProject);
+// Управление контентом
+router.post('/dropbox/connect', KomboController.connectDropbox);
+router.post('/media/upload', KomboController.uploadConfig.array('files', 50), KomboController.uploadMedia);
 
-// 📂 Управление контентом
-router.post('/:projectId/upload-media', KomboController.uploadMediaFiles);
+// Данные Instagram аккаунта
+router.post('/instagram/save', KomboController.saveInstagramData);
 
-// 📧 Instagram данные
-router.post('/:projectId/save-instagram', KomboController.saveInstagramData);
+// 🚀 АВТОМАТИЧЕСКОЕ СОЗДАНИЕ ADSPOWER ПРОФИЛЯ
+router.post('/adspower/create-auto', KomboController.createAdsPowerProfile);
 
-// 🚀 AdsPower автоматизация (ключевая функция ТЗ)
-router.post('/:projectId/create-adspower-auto', KomboController.createAdsPowerProfileAuto);
+// Pupiter - Автоматический пульт управления
+router.get('/pupiter/status', KomboController.getPupiterStatus);
+router.post('/pupiter/stop', KomboController.stopAutomation);
 
-// 🎮 Полный цикл автоматизации (главные кнопки ТЗ)
-router.post('/:projectId/start-full-cycle', KomboController.startFullCycle);
-router.post('/:projectId/stop-full-cycle', KomboController.stopFullCycle);
-
-// 📊 Статистика и мониторинг
-router.get('/:projectId/stats', KomboController.getProjectStats);
-
-// Существующие маршруты (оставляем для совместимости)
-router.post('/:projectId/setup-adspower', KomboController.setupAdsPowerProfile);
-router.post('/:projectId/start', KomboController.startProject);
-router.post('/:projectId/stop', KomboController.stopProject);
+// Система диагностики и восстановления
+router.post('/diagnostics/run', KomboController.runDiagnostics);
 
 export default router; 

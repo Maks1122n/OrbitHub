@@ -394,4 +394,154 @@ export class AdsPowerService {
       };
     }
   }
+
+  // 🚀 АВТОМАТИЧЕСКОЕ СОЗДАНИЕ INSTAGRAM ПРОФИЛЕЙ
+  async createInstagramProfile(instagramData: {
+    login: string;
+    password: string;
+    profileName: string;
+  }): Promise<any> {
+    try {
+      const profileConfig = this.generateOptimalConfig(instagramData.profileName);
+      
+      console.log('🎮 Создание AdsPower профиля для Instagram:', instagramData.login);
+      
+      const response = await axios.post(`${this.baseUrl}/api/v1/user/create`, {
+        user_proxy_config: {
+          proxy_type: "noproxy" // Начинаем без прокси
+        },
+        user_config: profileConfig,
+        group_name: "Instagram_Automation",
+        remark: `Создано автоматически для Instagram: ${instagramData.login}`
+      }, {
+        timeout: adsPowerConfig.timeout, // Используем timeout из конфига
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.data.code === 0) {
+        const profileId = response.data.data.id;
+        console.log('✅ AdsPower профиль создан:', profileId);
+        
+        // Сохраняем данные Instagram в профиле
+        await this.saveInstagramCredentials(profileId, instagramData);
+        
+        return {
+          success: true,
+          profileId: profileId,
+          profileName: instagramData.profileName,
+          message: `Профиль AdsPower создан (ID: ${profileId})`
+        };
+      } else {
+        throw new Error(`AdsPower API error: ${response.data.msg}`);
+      }
+    } catch (error: any) {
+      console.error('❌ Ошибка создания AdsPower профиля:', error.message);
+      throw new Error(`Не удалось создать AdsPower профиль: ${error.message}`);
+    }
+  }
+
+  // Генерация оптимальной конфигурации для Instagram
+  private generateOptimalConfig(profileName: string) {
+    // Выбор Chrome версии (приоритет стабильности)
+    const chromeVersions = ['138.0.6887.54', '137.0.6864.110', '136.0.6803.90'];
+    const selectedChrome = chromeVersions[Math.floor(Math.random() * chromeVersions.length)];
+    
+    // Windows версии (70% Win10, 30% Win11)
+    const isWin11 = Math.random() < 0.3;
+    const windowsVersion = isWin11 ? '11' : '10';
+    
+    // WebGL конфигурация для Instagram
+    const webglVendors = [
+      'Google Inc. (AMD)',
+      'Google Inc. (Intel)',
+      'Google Inc. (Apple)'
+    ];
+    const selectedVendor = webglVendors[Math.floor(Math.random() * webglVendors.length)];
+    
+    return {
+      name: profileName,
+      domain_name: "instagram.com",
+      open_urls: ["https://www.instagram.com/"],
+      repeat_config: [],
+      username: "",
+      password: "",
+      fakey: "",
+      cookie: "",
+      ignore_cookie_error: 1,
+      ip_checker: 1,
+      sys_app_cate_id: 0,
+      cate_id: 0,
+      
+      // Браузер настройки (Chrome приоритет)
+      browser_kernel_config: {
+        version: selectedChrome,
+        type: "chrome"
+      },
+      
+      // Система
+      sys_config: {
+        os: "Windows",
+        version: windowsVersion,
+        arch: "x64"
+      },
+      
+      // WebGL оптимизация для Instagram
+      webgl_config: {
+        webgl_vendor: selectedVendor,
+        webgl_renderer: this.getWebGLRenderer(selectedVendor)
+      },
+      
+      // Canvas и WebGL Image ОТКЛЮЧЕНЫ для безопасности Instagram
+      canvas_config: {
+        canvas_noise: 0,
+        canvas_image: 0
+      },
+      
+      // Отпечаток браузера
+      fingerprint_config: {
+        hardware_noise: 1, // Включаем шум оборудования
+        client_rects_noise: 1,
+        webgl_image: 0 // ОТКЛЮЧЕНО для Instagram
+      },
+      
+      // User-Agent автогенерация
+      user_agent: this.generateUserAgent(selectedChrome, windowsVersion)
+    };
+  }
+
+  private getWebGLRenderer(vendor: string): string {
+    const renderers: { [key: string]: string[] } = {
+      'Google Inc. (AMD)': ['AMD Radeon RX 580', 'AMD Radeon RX 6600', 'AMD Radeon Pro 580'],
+      'Google Inc. (Intel)': ['Intel UHD Graphics 630', 'Intel Iris Xe Graphics', 'Intel HD Graphics 530'],
+      'Google Inc. (Apple)': ['Apple M1', 'Apple M2', 'Apple GPU']
+    };
+    
+    const availableRenderers = renderers[vendor] || renderers['Google Inc. (AMD)'];
+    return availableRenderers[Math.floor(Math.random() * availableRenderers.length)];
+  }
+
+  private generateUserAgent(chromeVersion: string, windowsVersion: string): string {
+    const winNT = windowsVersion === '11' ? '10.0' : '10.0'; // NT версии одинаковые
+    return `Mozilla/5.0 (Windows NT ${winNT}; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
+  }
+
+  // Сохранение Instagram данных в профиле
+  private async saveInstagramCredentials(profileId: string, instagramData: {
+    login: string;
+    password: string;
+  }): Promise<void> {
+    try {
+      // Это можно расширить для сохранения данных в заметках профиля
+      console.log(`💾 Сохранение Instagram данных для профиля ${profileId}:`, instagramData.login);
+      
+      // В будущем здесь можно добавить обновление профиля с Instagram данными
+      // через API AdsPower для сохранения в заметках или кастомных полях
+      
+    } catch (error) {
+      console.error('⚠️ Предупреждение: не удалось сохранить Instagram данные:', error);
+      // Не бросаем ошибку, так как это не критично для создания профиля
+    }
+  }
 } 

@@ -14,438 +14,267 @@ export interface DropboxFile {
   downloadUrl?: string;
 }
 
-export interface DropboxFolder {
+export interface DropboxFolderInfo {
   path: string;
-  name: string;
-  videoCount: number;
+  files: DropboxFile[];
+  totalFiles: number;
   totalSize: number;
-  lastModified: string;
-  isAccessible: boolean;
-}
-
-export interface VideoProcessingResult {
-  success: boolean;
-  localPath?: string;
-  error?: string;
-  duration?: number;
-  resolution?: string;
-}
-
-export interface FolderAccessResult {
-  accessible: boolean;
-  error?: string;
-  folderExists?: boolean;
-  videoCount?: number;
 }
 
 export class DropboxService {
-  private dbx: Dropbox;
-  private cacheDir: string;
-  private maxCacheSize: number = 500 * 1024 * 1024; // 500MB cache
-  private tokenLastUpdated: Date;
-  private static instance: DropboxService;
-  private fileCacheMap: Map<string, { files: DropboxFile[]; lastUpdated: Date }> = new Map();
-  private cacheExpiryTime: number = 10 * 60 * 1000; // 10 минут в миллисекундах
+  private dropbox: Dropbox | null = null;
+  private isEnabled: boolean = false;
 
-  constructor(accessToken?: string) {
-    const token = accessToken || config.dropbox.accessToken;
-    
-    if (!token) {
-      console.warn('⚠️  Dropbox access token not configured - Dropbox functionality disabled');
-      this.dbx = null;
-      return;
+  constructor() {
+    // Проверяем наличие токена доступа
+    if (!config.dropbox?.accessToken) {
+      console.log('⚠️ Dropbox access token not configured - Dropbox functionality disabled');
+      logger.warn('Dropbox access token not configured - Dropbox functionality disabled');
+      this.isEnabled = false;
+      return; // НЕ выбрасываем ошибку, просто отключаем функционал
     }
 
     try {
-      this.dbx = new Dropbox({ 
-        accessToken: token,
-        fetch: require('node-fetch')
+      this.dropbox = new Dropbox({
+        accessToken: config.dropbox.accessToken,
+        fetch: fetch
       });
+      this.isEnabled = true;
+      console.log('✅ Dropbox service initialized successfully');
+      logger.info('Dropbox service initialized successfully');
     } catch (error) {
-      console.error('❌ Failed to initialize Dropbox service:', error);
-      this.dbx = null;
-    }
-
-    this.cacheDir = path.join(process.cwd(), 'cache', 'dropbox');
-    this.tokenLastUpdated = new Date();
-    this.ensureCacheDirectory();
-    
-    // Singleton pattern для глобального доступа
-    DropboxService.instance = this;
-    
-    // Запускаем периодическую очистку кеша
-    this.startCacheCleanup();
-  }
-
-  // Получение единого экземпляра
-  static getInstance(): DropboxService {
-    if (!DropboxService.instance) {
-      DropboxService.instance = new DropboxService();
-    }
-    return DropboxService.instance;
-  }
-
-  // Обновление токена доступа
-  updateAccessToken(newToken: string): void {
-    this.dbx = new Dropbox({ 
-      accessToken: newToken,
-      fetch: require('node-fetch')
-    });
-    this.tokenLastUpdated = new Date();
-    logger.info('Dropbox access token updated successfully');
-  }
-
-  // Проверка времени последнего обновления токена
-  isTokenExpiringSoon(): boolean {
-    const now = new Date();
-    const timeSinceUpdate = now.getTime() - this.tokenLastUpdated.getTime();
-    const threeHours = 3 * 60 * 60 * 1000; // 3 часа в миллисекундах
-    
-    return timeSinceUpdate > threeHours;
-  }
-
-  // Получение времени до истечения токена
-  getTokenTimeRemaining(): { hours: number; minutes: number } {
-    const now = new Date();
-    const timeSinceUpdate = now.getTime() - this.tokenLastUpdated.getTime();
-    const fourHours = 4 * 60 * 60 * 1000; // 4 часа в миллисекундах
-    const timeRemaining = fourHours - timeSinceUpdate;
-    
-    if (timeRemaining <= 0) {
-      return { hours: 0, minutes: 0 };
-    }
-    
-    const hours = Math.floor(timeRemaining / (60 * 60 * 1000));
-    const minutes = Math.floor((timeRemaining % (60 * 60 * 1000)) / (60 * 1000));
-    
-    return { hours, minutes };
-  }
-
-  // Обеспечение существования cache директории
-  private ensureCacheDirectory(): void {
-    if (!fs.existsSync(this.cacheDir)) {
-      fs.mkdirSync(this.cacheDir, { recursive: true });
-      logger.info(`Created Dropbox cache directory: ${this.cacheDir}`);
+      console.log('⚠️ Dropbox initialization failed - Dropbox functionality disabled');
+      logger.error('Dropbox initialization failed', error);
+      this.isEnabled = false;
     }
   }
 
-  // Проверка токена доступа
-  async validateAccessToken(): Promise<boolean> {
-    if (!this.dbx) {
-      logger.warn('Dropbox service not initialized - token validation skipped');
-      return false;
-    }
-    
-    try {
-      await this.dbx.usersGetCurrentAccount();
-      logger.info('Dropbox access token is valid');
-      return true;
-    } catch (error) {
-      logger.error('Invalid Dropbox access token:', error);
-      return false;
-    }
+  // Проверка доступности сервиса
+  public isServiceEnabled(): boolean {
+    return this.isEnabled && this.dropbox !== null;
   }
 
   // Получение информации об аккаунте
-  async getAccountInfo(): Promise<any> {
-    if (!this.dbx) {
-      logger.warn('Dropbox service not initialized - account info unavailable');
-      return null;
+  async getAccountInfo() {
+    if (!this.isServiceEnabled()) {
+      throw new Error('Dropbox service is not enabled. Please configure access token.');
     }
-    
+
     try {
-      const response = await this.dbx.usersGetCurrentAccount();
-      return {
-        name: response.result.name.display_name,
-        email: response.result.email,
-        accountId: response.result.account_id,
-        country: response.result.country
-      };
+      const response = await this.dropbox!.usersGetCurrentAccount();
+      logger.info('Dropbox account info retrieved successfully');
+      return response.result;
     } catch (error) {
-      logger.error('Failed to get Dropbox account info:', error);
-      throw error;
+      logger.error('Error getting Dropbox account info:', error);
+      throw new Error('Failed to get Dropbox account information');
     }
   }
 
-  // Получение списка видео файлов из папки с кешированием
-  async getVideoFiles(folderPath: string, useCache: boolean = true): Promise<DropboxFile[]> {
+  // Получение списка файлов в папке
+  async getFolderContents(folderPath: string = ''): Promise<DropboxFolderInfo> {
+    if (!this.isServiceEnabled()) {
+      throw new Error('Dropbox service is not enabled. Please configure access token.');
+    }
+
     try {
-      // Проверяем кеш
-      if (useCache && this.fileCacheMap.has(folderPath)) {
-        const cached = this.fileCacheMap.get(folderPath)!;
-        const now = new Date();
-        if (now.getTime() - cached.lastUpdated.getTime() < this.cacheExpiryTime) {
-          logger.info(`Using cached files for ${folderPath}`);
-          return cached.files;
+      const response = await this.dropbox!.filesListFolder({
+        path: folderPath,
+        recursive: false,
+        include_media_info: true,
+        include_deleted: false,
+        include_has_explicit_shared_members: false
+      });
+
+      const files: DropboxFile[] = [];
+      let totalSize = 0;
+
+      // Обрабатываем файлы
+      response.result.entries.forEach((entry: any) => {
+        if (entry['.tag'] === 'file') {
+          const isVideo = this.isVideoFile(entry.name);
+          const file: DropboxFile = {
+            name: entry.name,
+            path: entry.path_lower,
+            size: entry.size || 0,
+            modifiedTime: entry.client_modified || entry.server_modified,
+            isVideo: isVideo
+          };
+          
+          files.push(file);
+          totalSize += file.size;
         }
-      }
+      });
 
-      const response = await this.dbx.filesListFolder({
+      // Сортируем по дате изменения (новые сначала)
+      files.sort((a, b) => new Date(b.modifiedTime).getTime() - new Date(a.modifiedTime).getTime());
+
+      const folderInfo: DropboxFolderInfo = {
         path: folderPath,
-        recursive: false
-      });
+        files: files,
+        totalFiles: files.length,
+        totalSize: totalSize
+      };
 
-      const videoFiles: DropboxFile[] = response.result.entries
-        .filter(entry => entry['.tag'] === 'file')
-        .filter(file => this.isVideoFile(file.name))
-        .map(file => ({
-          name: file.name,
-          path: `${folderPath}/${file.name}`,
-          size: (file as any).size || 0,
-          modifiedTime: (file as any).client_modified || new Date().toISOString(),
-          isVideo: true
-        }))
-        .sort((a, b) => {
-          // Сортируем по номеру в названии файла (1.mp4, 2.mp4, 3.mp4...)
-          const numA = parseInt(a.name.match(/(\d+)/)?.[1] || '0');
-          const numB = parseInt(b.name.match(/(\d+)/)?.[1] || '0');
-          return numA - numB;
-        });
-
-      // Кешируем результат
-      this.fileCacheMap.set(folderPath, {
-        files: videoFiles,
-        lastUpdated: new Date()
-      });
-
-      logger.info(`Found ${videoFiles.length} video files in ${folderPath}`);
-      return videoFiles;
-
+      logger.info(`Dropbox folder contents retrieved: ${files.length} files, ${totalSize} bytes`);
+      return folderInfo;
+      
     } catch (error) {
-      logger.error('Error fetching video files from Dropbox:', error);
-      return [];
+      logger.error('Error getting Dropbox folder contents:', error);
+      throw new Error('Failed to get folder contents from Dropbox');
     }
   }
 
-  // Скачивание видео файла с кешированием
-  async downloadVideo(folderPath: string, fileName: string, localPath: string): Promise<VideoProcessingResult> {
-    try {
-      const dropboxPath = `${folderPath}/${fileName}`;
-      const fullLocalPath = path.join(process.cwd(), localPath);
-      
-      // Проверяем кеш
-      const cacheKey = crypto.createHash('md5').update(dropboxPath).digest('hex');
-      const cachedPath = path.join(this.cacheDir, `${cacheKey}_${fileName}`);
-      
-      if (fs.existsSync(cachedPath)) {
-        // Копируем из кеша
-        fs.copyFileSync(cachedPath, fullLocalPath);
-        logger.info(`Used cached video: ${fileName}`);
-        return {
-          success: true,
-          localPath: fullLocalPath
-        };
-      }
-
-      const response = await this.dbx.filesDownload({
-        path: dropboxPath
-      });
-
-      // Создаем директорию если не существует
-      const dir = path.dirname(fullLocalPath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-
-      // @ts-ignore - Dropbox API types issue
-      const fileData = response.result.fileBinary;
-      
-      // Сохраняем файл
-      fs.writeFileSync(fullLocalPath, fileData);
-      
-      // Сохраняем в кеш
-      fs.writeFileSync(cachedPath, fileData);
-
-      logger.info(`Downloaded video: ${fileName} to ${fullLocalPath}`);
-      
-      // Проверяем размер кеша и очищаем при необходимости
-      this.checkCacheSize();
-      
-      return {
-        success: true,
-        localPath: fullLocalPath
-      };
-
-    } catch (error) {
-      logger.error('Error downloading video from Dropbox:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
+  // Проверка доступа к папке
+  async checkFolderAccess(folderPath: string): Promise<boolean> {
+    if (!this.isServiceEnabled()) {
+      return false;
     }
-  }
 
-  // Проверка доступности папки с детальной информацией
-  async checkFolderAccess(folderPath: string): Promise<FolderAccessResult> {
     try {
-      const response = await this.dbx.filesListFolder({
-        path: folderPath,
-        limit: 100
-      });
-
-      const videoFiles = response.result.entries
-        .filter(entry => entry['.tag'] === 'file')
-        .filter(file => this.isVideoFile(file.name));
-
-      return {
-        accessible: true,
-        folderExists: true,
-        videoCount: videoFiles.length
-      };
-    } catch (error: any) {
-      logger.error(`Cannot access Dropbox folder: ${folderPath}`, error);
-      
-      if (error.status === 404) {
-        return {
-          accessible: false,
-          folderExists: false,
-          error: 'Folder does not exist'
-        };
-      }
-      
-      return {
-        accessible: false,
-        folderExists: true,
-        error: error.message || 'Access denied'
-      };
-    }
-  }
-
-  // Получение информации о папке
-  async getFolderInfo(folderPath: string): Promise<DropboxFolder> {
-    try {
-      const accessResult = await this.checkFolderAccess(folderPath);
-      
-      if (!accessResult.accessible) {
-        return {
-          path: folderPath,
-          name: path.basename(folderPath),
-          videoCount: 0,
-          totalSize: 0,
-          lastModified: new Date().toISOString(),
-          isAccessible: false
-        };
-      }
-
-      const videoFiles = await this.getVideoFiles(folderPath);
-      const totalSize = videoFiles.reduce((sum, file) => sum + file.size, 0);
-      const lastModified = videoFiles.length > 0 
-        ? videoFiles.reduce((latest, file) => 
-            new Date(file.modifiedTime) > new Date(latest) ? file.modifiedTime : latest, 
-            videoFiles[0].modifiedTime)
-        : new Date().toISOString();
-
-      return {
-        path: folderPath,
-        name: path.basename(folderPath),
-        videoCount: videoFiles.length,
-        totalSize,
-        lastModified,
-        isAccessible: true
-      };
-    } catch (error) {
-      logger.error(`Error getting folder info for ${folderPath}:`, error);
-      return {
-        path: folderPath,
-        name: path.basename(folderPath),
-        videoCount: 0,
-        totalSize: 0,
-        lastModified: new Date().toISOString(),
-        isAccessible: false
-      };
-    }
-  }
-
-  // Создание папки
-  async createFolder(folderPath: string): Promise<boolean> {
-    try {
-      await this.dbx.filesCreateFolderV2({
-        path: folderPath,
-        autorename: false
-      });
-      
-      logger.info(`Created Dropbox folder: ${folderPath}`);
+      await this.dropbox!.filesGetMetadata({ path: folderPath });
       return true;
-    } catch (error: any) {
-      if (error.status === 403 && error.error?.error_summary?.includes('path/conflict/folder')) {
-        logger.info(`Folder already exists: ${folderPath}`);
-        return true; // Папка уже существует
-      }
-      
-      logger.error(`Error creating folder ${folderPath}:`, error);
+    } catch (error) {
+      logger.warn(`Dropbox folder access check failed for ${folderPath}:`, error);
       return false;
     }
   }
 
-  // Проверка размера кеша и очистка
-  private checkCacheSize(): void {
+  // Получение ссылки для скачивания файла
+  async getDownloadLink(filePath: string): Promise<string> {
+    if (!this.isServiceEnabled()) {
+      throw new Error('Dropbox service is not enabled. Please configure access token.');
+    }
+
     try {
-      const files = fs.readdirSync(this.cacheDir);
-      let totalSize = 0;
+      const response = await this.dropbox!.filesGetTemporaryLink({ path: filePath });
+      logger.info(`Download link generated for file: ${filePath}`);
+      return response.result.link;
+    } catch (error) {
+      logger.error(`Error getting download link for ${filePath}:`, error);
+      throw new Error('Failed to get download link from Dropbox');
+    }
+  }
+
+  // Скачивание файла
+  async downloadFile(filePath: string, localPath: string): Promise<void> {
+    if (!this.isServiceEnabled()) {
+      throw new Error('Dropbox service is not enabled. Please configure access token.');
+    }
+
+    try {
+      const response = await this.dropbox!.filesDownload({ path: filePath });
+
+      // Создаем директорию если не существует
+      const dir = path.dirname(localPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
       
-      const fileStats = files.map(file => {
-        const filePath = path.join(this.cacheDir, file);
-        const stats = fs.statSync(filePath);
-        totalSize += stats.size;
-        return { path: filePath, size: stats.size, mtime: stats.mtime };
+      // Сохраняем файл
+      // @ts-ignore
+      fs.writeFileSync(localPath, response.result.fileBinary);
+      
+      logger.info(`File downloaded from Dropbox: ${filePath} -> ${localPath}`);
+    } catch (error) {
+      logger.error(`Error downloading file ${filePath}:`, error);
+      throw new Error('Failed to download file from Dropbox');
+    }
+  }
+
+  // Загрузка файла в Dropbox
+  async uploadFile(localPath: string, dropboxPath: string): Promise<void> {
+    if (!this.isServiceEnabled()) {
+      throw new Error('Dropbox service is not enabled. Please configure access token.');
+    }
+
+    try {
+      const fileBuffer = fs.readFileSync(localPath);
+      
+      await this.dropbox!.filesUpload({
+        path: dropboxPath,
+        contents: fileBuffer,
+        mode: 'overwrite' as any,
+        autorename: true
       });
-
-      if (totalSize > this.maxCacheSize) {
-        // Сортируем по времени изменения (самые старые первыми)
-        fileStats.sort((a, b) => a.mtime.getTime() - b.mtime.getTime());
-        
-        // Удаляем старые файлы пока размер не станет приемлемым
-        let removedSize = 0;
-        for (const file of fileStats) {
-          if (totalSize - removedSize <= this.maxCacheSize * 0.8) break;
-          
-          fs.unlinkSync(file.path);
-          removedSize += file.size;
-          logger.info(`Removed cached file: ${path.basename(file.path)}`);
-        }
-        
-        logger.info(`Cache cleanup completed. Removed ${removedSize} bytes`);
-      }
+      
+      logger.info(`File uploaded to Dropbox: ${localPath} -> ${dropboxPath}`);
     } catch (error) {
-      logger.error('Error during cache cleanup:', error);
+      logger.error(`Error uploading file ${localPath}:`, error);
+      throw new Error('Failed to upload file to Dropbox');
     }
   }
 
-  // Принудительная очистка кеша
-  private cleanupCache(): void {
+  // Получение списка только видео файлов
+  async getVideoFiles(folderPath: string = ''): Promise<DropboxFile[]> {
+    if (!this.isServiceEnabled()) {
+      return []; // Возвращаем пустой массив вместо ошибки
+    }
+
     try {
-      const files = fs.readdirSync(this.cacheDir);
-      for (const file of files) {
-        fs.unlinkSync(path.join(this.cacheDir, file));
-      }
-      
-      // Очищаем кеш списков файлов
-      this.fileCacheMap.clear();
-      
-      logger.info('Cache cleared successfully');
+      const folderInfo = await this.getFolderContents(folderPath);
+      return folderInfo.files.filter(file => file.isVideo);
     } catch (error) {
-      logger.error('Error clearing cache:', error);
+      logger.error('Error getting video files from Dropbox:', error);
+      return []; // Возвращаем пустой массив в случае ошибки
     }
   }
 
-  // Запуск периодической очистки кеша
-  private startCacheCleanup(): void {
-    setInterval(() => {
-      this.checkCacheSize();
+  // Создание кэшированной копии видео файла
+  async cacheVideoFile(dropboxPath: string): Promise<string> {
+    if (!this.isServiceEnabled()) {
+      throw new Error('Dropbox service is not enabled. Please configure access token.');
+    }
+
+    try {
+      const fileName = path.basename(dropboxPath);
+      const cacheDir = path.join(process.cwd(), 'cache', 'videos');
+      const cachedPath = path.join(cacheDir, `${crypto.randomUUID()}_${fileName}`);
       
-      // Очищаем устаревшие записи из кеша списков файлов
-      const now = new Date();
-      for (const [folderPath, cache] of this.fileCacheMap.entries()) {
-        if (now.getTime() - cache.lastUpdated.getTime() > this.cacheExpiryTime * 2) {
-          this.fileCacheMap.delete(folderPath);
-        }
-      }
-    }, 30 * 60 * 1000); // Каждые 30 минут
+      await this.downloadFile(dropboxPath, cachedPath);
+      
+      logger.info(`Video file cached: ${dropboxPath} -> ${cachedPath}`);
+      return cachedPath;
+    } catch (error) {
+      logger.error(`Error caching video file ${dropboxPath}:`, error);
+      throw new Error('Failed to cache video file');
+    }
   }
 
+  // Очистка кэша
+  async clearCache(): Promise<void> {
+    try {
+      const cacheDir = path.join(process.cwd(), 'cache', 'videos');
+      if (fs.existsSync(cacheDir)) {
+        const files = fs.readdirSync(cacheDir);
+        for (const file of files) {
+          fs.unlinkSync(path.join(cacheDir, file));
+        }
+        logger.info('Dropbox cache cleared');
+      }
+    } catch (error) {
+      logger.error('Error clearing Dropbox cache:', error);
+    }
+  }
+
+  // Проверка является ли файл видео
   private isVideoFile(fileName: string): boolean {
-    const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'];
-    const ext = path.extname(fileName).toLowerCase();
-    return videoExtensions.includes(ext);
+    const videoExtensions = ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.mkv', '.m4v'];
+    const extension = path.extname(fileName).toLowerCase();
+    return videoExtensions.includes(extension);
+  }
+
+  // Получение статистики использования
+  async getUsageInfo() {
+    if (!this.isServiceEnabled()) {
+      throw new Error('Dropbox service is not enabled. Please configure access token.');
+    }
+
+    try {
+      const response = await this.dropbox!.usersGetSpaceUsage();
+      return response.result;
+    } catch (error) {
+      logger.error('Error getting Dropbox usage info:', error);
+      throw new Error('Failed to get Dropbox usage information');
+    }
   }
 } 

@@ -1,12 +1,20 @@
-import { Response } from 'express';
-import { Account, IAccount } from '../models/Account';
-import { AdsPowerService } from '../services/AdsPowerService';
+import { Request, Response } from 'express';
+import { Account } from '../models/Account';
 import { DropboxService } from '../services/DropboxService';
+import { AdsPowerService } from '../services/AdsPowerService';
 import { AuthRequest } from '../middleware/auth';
 import logger from '../utils/logger';
 
+// Безопасная инициализация DropboxService
+let dropboxService: DropboxService | null = null;
+try {
+  dropboxService = new DropboxService();
+} catch (error) {
+  console.log('⚠️ DropboxService initialization failed - some features will be disabled');
+  logger.warn('DropboxService initialization failed', error);
+}
+
 const adsPowerService = new AdsPowerService();
-const dropboxService = new DropboxService();
 
 export class AccountController {
   // Получение всех аккаунтов пользователя
@@ -120,7 +128,7 @@ export class AccountController {
 
       // Проверяем доступность Dropbox папки
       if (accountData.dropboxFolder) {
-        const hasAccess = await dropboxService.checkFolderAccess(accountData.dropboxFolder);
+        const hasAccess = await dropboxService?.checkFolderAccess(accountData.dropboxFolder);
         if (!hasAccess) {
           res.status(400).json({
             success: false,
@@ -225,7 +233,7 @@ export class AccountController {
 
       // Проверяем Dropbox папку если она изменяется
       if (updateData.dropboxFolder && updateData.dropboxFolder !== account.dropboxFolder) {
-        const hasAccess = await dropboxService.checkFolderAccess(updateData.dropboxFolder);
+        const hasAccess = await dropboxService?.checkFolderAccess(updateData.dropboxFolder);
         if (!hasAccess) {
           res.status(400).json({
             success: false,
@@ -371,7 +379,7 @@ export class AccountController {
       }
 
       // Проверяем доступность Dropbox папки
-      const hasAccess = await dropboxService.checkFolderAccess(account.dropboxFolder);
+      const hasAccess = await dropboxService?.checkFolderAccess(account.dropboxFolder);
       if (!hasAccess) {
         res.status(400).json({
           success: false,
@@ -493,7 +501,7 @@ export class AccountController {
 
       // Проверяем доступность Dropbox
       try {
-        const result = await dropboxService.checkFolderAccess(account.dropboxFolder);
+        const result = await dropboxService?.checkFolderAccess(account.dropboxFolder);
         dropboxStatus = typeof result === 'boolean' ? result : !!(result as any).success;
       } catch (error) {
         logger.warn(`Failed to check Dropbox access for ${account.username}:`, error);
