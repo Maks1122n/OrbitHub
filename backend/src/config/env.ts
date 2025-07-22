@@ -1,5 +1,17 @@
 import dotenv from 'dotenv';
-dotenv.config();
+import path from 'path';
+
+// Явно указываем путь к .env файлу
+const envPath = path.join(__dirname, '../../.env');
+console.log('🔧 Loading .env from:', envPath);
+
+const result = dotenv.config({ path: envPath });
+if (result.error) {
+  console.error('❌ Error loading .env:', result.error);
+} else {
+  console.log('✅ .env loaded successfully');
+  console.log('🔌 MONGODB_URI from env:', process.env.MONGODB_URI ? 'SET' : 'NOT SET');
+}
 
 export const config = {
   port: process.env.PORT || 5000,
@@ -36,3 +48,7 @@ export const config = {
   logLevel: process.env.LOG_LEVEL || 'info',
   logRetentionDays: Number(process.env.LOG_RETENTION_DAYS) || 30
 }; 
+
+// Debug: показываем что именно загрузилось
+console.log('🔧 Final config.mongoUri:', config.mongoUri);
+console.log('🔧 Raw MONGODB_URI:', process.env.MONGODB_URI); 

@@ -1,8 +1,21 @@
+// Загружаем переменные окружения В ПЕРВУЮ ОЧЕРЕДЬ
+import dotenv from 'dotenv';
+import path from 'path';
+
+const envPath = path.join(__dirname, '../.env');
+console.log('🔧 Loading .env from:', envPath);
+const result = dotenv.config({ path: envPath });
+if (result.error) {
+  console.error('❌ Error loading .env:', result.error);
+} else {
+  console.log('✅ .env loaded successfully');
+  console.log('🔌 MONGODB_URI from env:', process.env.MONGODB_URI ? 'SET' : 'NOT SET');
+}
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import path from 'path';
 import { connectDatabase } from './config/database';
 import { createDefaultAdmin } from './utils/createAdmin';
 import logger from './utils/logger';
