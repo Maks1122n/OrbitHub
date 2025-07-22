@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
 import { Label } from '@/components/ui/label';
 import { 
   Upload, 
@@ -25,7 +25,8 @@ import {
   Shield,
   Globe,
   Cpu,
-  Palette
+  Palette,
+  Users
 } from 'lucide-react';
 import { api } from '@/lib/api';
 
@@ -42,6 +43,8 @@ interface InstagramAccount {
   login: string;
   password: string;
   profileName: string;
+  maxPostsPerDay: number;
+  dropboxFolder: string;
 }
 
 interface AutomationSettings {
@@ -53,6 +56,7 @@ interface AutomationSettings {
 
 interface PupiterStatus {
   isRunning: boolean;
+  isPaused: boolean;
   currentTask: string;
   progress: number;
   totalProfiles: number;
@@ -67,7 +71,9 @@ export default function KomboNew() {
   const [instagramAccount, setInstagramAccount] = useState<InstagramAccount>({
     login: '',
     password: '',
-    profileName: ''
+    profileName: '',
+    maxPostsPerDay: 3,
+    dropboxFolder: '/'
   });
   const [settings, setSettings] = useState<AutomationSettings>({
     postsPerDay: 3,
@@ -77,6 +83,7 @@ export default function KomboNew() {
   });
   const [pupiterStatus, setPupiterStatus] = useState<PupiterStatus>({
     isRunning: false,
+    isPaused: false,
     currentTask: 'Ожидание',
     progress: 0,
     totalProfiles: 0,
@@ -88,12 +95,14 @@ export default function KomboNew() {
   const [dropboxConnected, setDropboxConnected] = useState(false);
   const [contentReady, setContentReady] = useState(false);
   const [accountSaved, setAccountSaved] = useState(false);
+  const [userAccounts, setUserAccounts] = useState<any[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Загрузка статуса при монтировании
   useEffect(() => {
     loadPupiterStatus();
+    loadUserAccounts();
     const interval = setInterval(loadPupiterStatus, 2000);
     return () => clearInterval(interval);
   }, []);
@@ -104,6 +113,15 @@ export default function KomboNew() {
       setPupiterStatus(response.data);
     } catch (error) {
       console.error('Ошибка загрузки статуса Pupiter:', error);
+    }
+  };
+
+  const loadUserAccounts = async () => {
+    try {
+      const response = await api.get('/kombo-new/accounts');
+      setUserAccounts(response.data.accounts || []);
+    } catch (error) {
+      console.error('Ошибка загрузки аккаунтов:', error);
     }
   };
 
@@ -142,8 +160,10 @@ export default function KomboNew() {
   // Сохранение данных Instagram
   const handleSaveInstagram = async () => {
     try {
-      await api.post('/kombo-new/instagram/save', instagramAccount);
+      const response = await api.post('/kombo-new/instagram/save', instagramAccount);
+      console.log('Instagram account saved:', response.data);
       setAccountSaved(true);
+      loadUserAccounts(); // Обновляем список аккаунтов
     } catch (error) {
       console.error('Ошибка сохранения данных Instagram:', error);
     }
@@ -181,6 +201,44 @@ export default function KomboNew() {
       await api.post('/kombo-new/pupiter/stop');
     } catch (error) {
       console.error('Ошибка остановки автоматизации:', error);
+    }
+  };
+
+  // Пауза автоматизации
+  const handlePauseAutomation = async () => {
+    try {
+      await api.post('/kombo-new/pupiter/pause');
+    } catch (error) {
+      console.error('Ошибка паузы автоматизации:', error);
+    }
+  };
+
+  // Возобновление автоматизации
+  const handleResumeAutomation = async () => {
+    try {
+      await api.post('/kombo-new/pupiter/resume');
+    } catch (error) {
+      console.error('Ошибка возобновления автоматизации:', error);
+    }
+  };
+
+  // Перезапуск автоматизации
+  const handleRestartAutomation = async () => {
+    try {
+      await api.post('/kombo-new/pupiter/restart');
+    } catch (error) {
+      console.error('Ошибка перезапуска автоматизации:', error);
+    }
+  };
+
+  // Диагностика системы
+  const handleDiagnostics = async () => {
+    try {
+      const response = await api.get('/kombo-new/pupiter/diagnostics');
+      console.log('Диагностика:', response.data);
+      // Можно показать результаты в модальном окне
+    } catch (error) {
+      console.error('Ошибка диагностики:', error);
     }
   };
 
@@ -241,22 +299,55 @@ export default function KomboNew() {
             </div>
           </div>
 
-          <div className="flex gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
             <Button 
               onClick={handleStartAutomation}
               disabled={pupiterStatus.isRunning || !contentReady || !accountSaved}
               className="bg-green-600 hover:bg-green-700"
             >
               <Play className="h-4 w-4 mr-2" />
-              Запустить Pupiter
+              Запустить
+            </Button>
+            <Button 
+              onClick={pupiterStatus.isPaused ? handleResumeAutomation : handlePauseAutomation}
+              disabled={!pupiterStatus.isRunning}
+              className="bg-yellow-600 hover:bg-yellow-700"
+            >
+              {pupiterStatus.isPaused ? (
+                <>
+                  <Play className="h-4 w-4 mr-2" />
+                  Возобновить
+                </>
+              ) : (
+                <>
+                  <Pause className="h-4 w-4 mr-2" />
+                  Пауза
+                </>
+              )}
             </Button>
             <Button 
               onClick={handleStopAutomation}
               disabled={!pupiterStatus.isRunning}
-              variant="outline"
+              className="bg-red-600 hover:bg-red-700"
             >
               <Square className="h-4 w-4 mr-2" />
               Остановить
+            </Button>
+            <Button 
+              onClick={handleRestartAutomation}
+              disabled={!pupiterStatus.isRunning}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              <RotateCw className="h-4 w-4 mr-2" />
+              Перезапуск
+            </Button>
+            <Button 
+              onClick={handleDiagnostics}
+              variant="outline"
+              className="border-purple-600 text-purple-400 hover:bg-purple-600"
+            >
+              <Settings className="h-4 w-4 mr-2" />
+              Диагностика
             </Button>
           </div>
         </div>
@@ -354,6 +445,29 @@ export default function KomboNew() {
               onChange={(e) => setInstagramAccount({...instagramAccount, profileName: e.target.value})}
               placeholder="Автозаполнение из логина"
             />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="max-posts">Максимум постов в день</Label>
+              <Input
+                id="max-posts"
+                type="number"
+                min="1"
+                max="20"
+                value={instagramAccount.maxPostsPerDay}
+                onChange={(e) => setInstagramAccount({...instagramAccount, maxPostsPerDay: parseInt(e.target.value) || 3})}
+              />
+            </div>
+            <div>
+              <Label htmlFor="dropbox-folder">Папка Dropbox</Label>
+              <Input
+                id="dropbox-folder"
+                type="text"
+                value={instagramAccount.dropboxFolder}
+                onChange={(e) => setInstagramAccount({...instagramAccount, dropboxFolder: e.target.value})}
+                placeholder="/"
+              />
+            </div>
           </div>
           <Button onClick={handleSaveInstagram} className="w-full">
             Сохранить данные аккаунта
@@ -468,7 +582,66 @@ export default function KomboNew() {
         </div>
       </Card>
 
-      {/* Секция 5: Логи и мониторинг */}
+      {/* Секция 5: Мои Instagram аккаунты */}
+      {userAccounts.length > 0 && (
+        <Card>
+          <div className="p-6 border-b border-gray-700">
+            <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+              <Users className="h-6 w-6 text-blue-400" />
+              Мои Instagram аккаунты ({userAccounts.length})
+            </h2>
+          </div>
+          <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {userAccounts.map((account, index) => (
+                <div key={account.id} className="bg-gray-700 p-4 rounded-lg border border-gray-600">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold text-white">{account.displayName}</h3>
+                    <div className={`px-2 py-1 rounded text-xs ${
+                      account.status === 'active' ? 'bg-green-600 text-white' :
+                      account.status === 'pending' ? 'bg-yellow-600 text-white' :
+                      'bg-red-600 text-white'
+                    }`}>
+                      {account.status}
+                    </div>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Логин:</span>
+                      <span className="text-white">{account.username}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Постов/день:</span>
+                      <span className="text-white">{account.maxPostsPerDay}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">AdsPower:</span>
+                      <span className={`${
+                        account.adsPowerStatus === 'created' ? 'text-green-400' :
+                        account.adsPowerStatus === 'creating' ? 'text-yellow-400' :
+                        'text-gray-400'
+                      }`}>
+                        {account.adsPowerStatus === 'created' ? '✅ Создан' :
+                         account.adsPowerStatus === 'creating' ? '⏳ Создается' :
+                         account.adsPowerStatus === 'error' ? '❌ Ошибка' :
+                         '⚪ Не создан'}
+                      </span>
+                    </div>
+                    {account.isRunning && (
+                      <div className="flex items-center gap-1 text-green-400">
+                        <Activity className="h-3 w-3" />
+                        <span className="text-xs">Автоматизация активна</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Секция 6: Логи и мониторинг */}
       <Card>
         <div className="p-6 border-b border-gray-700">
           <h2 className="text-xl font-semibold text-white flex items-center gap-2">

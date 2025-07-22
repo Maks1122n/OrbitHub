@@ -1,8 +1,4 @@
-// import puppeteer, { Browser, Page } from 'puppeteer';
-// Temporary stub for puppeteer - will be re-enabled after deployment
-type Browser = any;
-type Page = any;
-const puppeteer: any = null;
+import puppeteer, { Browser, Page } from 'puppeteer';
 import { BrowserSession, AdsPowerService } from './AdsPowerService';
 import { DropboxService } from './DropboxService';
 import logger from '../utils/logger';
@@ -40,7 +36,7 @@ export class InstagramService {
 
   constructor() {
     this.adsPowerService = new AdsPowerService();
-    this.dropboxService = DropboxService.getInstance();
+    this.dropboxService = new DropboxService();
   }
 
   // Авторизация в Instagram с расширенной обработкой
@@ -58,6 +54,11 @@ export class InstagramService {
 
     try {
       logger.info(`Attempting Instagram login for: ${username}`);
+
+      // Проверяем доступность WebSocket endpoint
+      if (!session.ws.puppeteer) {
+        throw new Error('No Puppeteer WebSocket endpoint provided in session');
+      }
 
       // Подключаемся к браузеру AdsPower
       browser = await puppeteer.connect({
@@ -272,7 +273,7 @@ export class InstagramService {
       // Проверяем на ошибки загрузки
       const uploadError = await page.$('[role="alert"]');
       if (uploadError) {
-        const errorText = await uploadError.textContent();
+        const errorText = await uploadError.evaluate(el => el.textContent);
         throw new Error(`Upload error: ${errorText}`);
       }
 
@@ -537,7 +538,7 @@ export class InstagramService {
 
   private async detectChallengeType(page: Page): Promise<'sms' | 'email' | 'photo' | 'unknown'> {
     try {
-      const pageText = await page.textContent('body') || '';
+      const pageText = await page.$eval('body', el => el.textContent) || '';
       
       if (pageText.includes('phone') || pageText.includes('SMS')) {
         return 'sms';
@@ -565,7 +566,7 @@ export class InstagramService {
       for (const selector of errorSelectors) {
         const element = await page.$(selector);
         if (element) {
-          const text = await element.textContent();
+          const text = await element.evaluate(el => el.textContent);
           if (text && text.trim()) {
             return text.trim();
           }
@@ -691,13 +692,13 @@ export class InstagramService {
     }
   }
 
-  private async checkForRestrictions(page: Page): Promise<{
+  private async checkForRestrictions(page: Page  ): Promise<{
     isBanned: boolean;
     hasRestrictions: boolean;
     error?: string;
   }> {
     try {
-      const bodyText = await page.textContent('body') || '';
+      const bodyText = await page.$eval('body', el => el.textContent) || '';
       
       const banIndicators = [
         'account has been disabled',

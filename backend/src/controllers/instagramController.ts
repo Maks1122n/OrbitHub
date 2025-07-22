@@ -10,7 +10,7 @@ import path from 'path';
 
 const instagramService = new InstagramService();
 const adsPowerService = new AdsPowerService();
-const dropboxService = DropboxService.getInstance();
+const dropboxService = new DropboxService();
 
 export class InstagramController {
   // Тест авторизации в Instagram
@@ -118,16 +118,16 @@ export class InstagramController {
 
       // Скачиваем видео из Dropbox
       const tempVideoPath = path.join(process.cwd(), 'temp', `${accountId}_${videoFileName}`);
-      const downloadResult = await dropboxService.downloadVideo(
-        account.dropboxFolder,
-        videoFileName,
-        tempVideoPath
-      );
-
-      if (!downloadResult.success) {
+      
+      try {
+        await dropboxService.downloadFile(
+          `${account.dropboxFolder}/${videoFileName}`,
+          tempVideoPath
+        );
+      } catch (error: any) {
         res.status(400).json({
           success: false,
-          error: downloadResult.error || 'Failed to download video'
+          error: error.message || 'Failed to download video'
         });
         return;
       }

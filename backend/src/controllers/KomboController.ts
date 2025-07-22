@@ -2,10 +2,16 @@ import { Request, Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { AdsPowerService } from '../services/AdsPowerService';
 import { DropboxService } from '../services/DropboxService';
+import PupiterService, { PupiterConfig, PupiterStatus } from '../services/PupiterService';
+// import AdsPowerConfigGenerator from '../services/AdsPowerConfigGenerator'; // Используем локальную версию
+import { Account, IAccount } from '../models/Account';
 import logger from '../utils/logger';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+
+// Глобальный экземпляр Pupiter для всех операций
+const globalPupiter = new PupiterService();
 
 // Интеллектуальный генератор конфигураций AdsPower
 class AdsPowerConfigGenerator {
@@ -129,154 +135,59 @@ class KomboRecoverySystem {
   }
 }
 
-// Pupiter - Автоматический пульт управления
-class Pupiter {
-  private isRunning: boolean = false;
-  private currentTask: string | null = null;
-  private progress: number = 0;
-  private logs: string[] = [];
-  
-  constructor() {
-    this.log('🎮 Pupiter инициализирован');
-  }
-  
-  private log(message: string) {
-    const timestamp = new Date().toISOString();
-    const logEntry = `[${timestamp}] ${message}`;
-    this.logs.push(logEntry);
-    logger.info(logEntry);
-    
-    // Оставляем только последние 100 записей
-    if (this.logs.length > 100) {
-      this.logs = this.logs.slice(-100);
-    }
-  }
-  
-  async startAutomation(profileConfig: any, mediaFiles: string[], instagramData: any) {
-    if (this.isRunning) {
-      throw new Error('Автоматизация уже запущена');
-    }
-    
-    this.isRunning = true;
-    this.progress = 0;
-    this.currentTask = 'Инициализация';
-    
-    try {
-      this.log('🚀 Запуск полной автоматизации');
-      
-      // Этап 1: Создание AdsPower профиля (20%)
-      this.currentTask = 'Создание AdsPower профиля';
-      this.log('📝 Генерация интеллектуальной конфигурации профиля');
-      await this.sleep(2000);
-      this.progress = 20;
-      
-      // Этап 2: Настройка отпечатка браузера (40%)
-      this.currentTask = 'Настройка отпечатка браузера';
-      this.log('🔧 Применение WebGL и Canvas настроек');
-      await this.sleep(2000);
-      this.progress = 40;
-      
-      // Этап 3: Запуск профиля (60%)
-      this.currentTask = 'Запуск профиля';
-      this.log('▶️ Открытие браузера с оптимизированными настройками');
-      await this.sleep(2000);
-      this.progress = 60;
-      
-      // Этап 4: Подготовка контента (80%)
-      this.currentTask = 'Подготовка контента';
-      this.log(`📁 Обработка ${mediaFiles.length} медиа файлов`);
-      await this.sleep(2000);
-      this.progress = 80;
-      
-      // Этап 5: Завершение (100%)
-      this.currentTask = 'Завершение настройки';
-      this.log('✅ Автоматизация завершена успешно');
-      await this.sleep(1000);
-      this.progress = 100;
-      
-      this.log('🎯 Готов к работе с Instagram');
-      
-      return {
-        success: true,
-        profileId: 'AUTO_' + Date.now(),
-        message: 'Автоматизация завершена успешно'
-      };
-      
-    } catch (error) {
-      this.log(`❌ Ошибка автоматизации: ${error.message}`);
-      throw error;
-    } finally {
-      this.isRunning = false;
-      this.currentTask = null;
-    }
-  }
-  
-  private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-  
-  getStatus() {
-    return {
-      isRunning: this.isRunning,
-      currentTask: this.currentTask,
-      progress: this.progress,
-      logs: this.logs.slice(-10) // Последние 10 записей
-    };
-  }
-  
-  stop() {
-    if (this.isRunning) {
-      this.log('⏹️ Остановка автоматизации по запросу пользователя');
-      this.isRunning = false;
-      this.currentTask = null;
-      this.progress = 0;
-    }
-  }
-}
-
-// Главный контроллер KOMBO
+// Главный контроллер KOMBO с интеграцией Pupiter
 export class KomboController {
-  private static pupiterStatus = {
-    isRunning: false,
-    currentTask: 'Ожидание',
-    progress: 0,
-    totalProfiles: 0,
-    activeProfiles: 0,
-    errors: [] as string[],
-    logs: [] as string[]
-  };
 
-  // Получение статуса Pupiter
+  // 📊 Получение статуса Pupiter
   static async getPupiterStatus(req: AuthRequest, res: Response) {
     try {
-      res.json(KomboController.pupiterStatus);
+      const status = globalPupiter.getStatus();
+      res.json(status);
     } catch (error: any) {
       console.error('Ошибка получения статуса Pupiter:', error);
       res.status(500).json({ error: error.message });
     }
   }
 
-  // Подключение Dropbox
+  // 📁 Подключение Dropbox
   static async connectDropbox(req: AuthRequest, res: Response) {
     try {
-      // Здесь будет логика подключения Dropbox
-      // Пока что возвращаем успешный ответ
-      KomboController.addLog('📁 Dropbox подключен успешно');
+      const dropboxService = new DropboxService();
+      
+      if (!dropboxService.isServiceEnabled()) {
+        return res.status(400).json({ 
+          error: 'Dropbox не настроен',
+          message: 'Необходимо настроить DROPBOX_ACCESS_TOKEN в переменных окружения'
+        });
+      }
+
+      // Проверяем подключение
+      const accountInfo = await dropboxService.getAccountInfo();
+      
+      // Получаем список видео файлов из корневой папки
+      const videoFiles = await dropboxService.getVideoFiles('/');
       
       res.json({
         success: true,
-        message: 'Dropbox подключен',
-        folderPath: '/OrbitHub/Media',
-        filesCount: 0
+        message: 'Dropbox подключен успешно',
+        account: {
+          name: accountInfo.name.display_name,
+          email: accountInfo.email
+        },
+        folderPath: '/',
+        filesCount: videoFiles.length,
+        videoFiles: videoFiles.slice(0, 10) // Показываем первые 10 файлов
       });
     } catch (error: any) {
       console.error('Ошибка подключения Dropbox:', error);
-      KomboController.addError(`Ошибка Dropbox: ${error.message}`);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ 
+        error: error.message,
+        message: 'Не удалось подключиться к Dropbox. Проверьте токен доступа.'
+      });
     }
   }
 
-  // Загрузка медиа файлов
+  // 📤 Загрузка медиа файлов
   static uploadConfig = multer({
     dest: path.join(__dirname, '../../uploads/kombo/'),
     limits: {
@@ -299,51 +210,109 @@ export class KomboController {
         return res.status(400).json({ error: 'Нет файлов для загрузки' });
       }
 
+      // Создаем директорию если не существует
+      const uploadDir = path.join(__dirname, '../../uploads/kombo/');
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+
       const mediaFiles = files.map(file => ({
         originalName: file.originalname,
         fileName: file.filename,
         filePath: file.path,
         size: file.size,
-        uploadedAt: new Date().toISOString()
+        uploadedAt: new Date().toISOString(),
+        mimetype: file.mimetype
       }));
 
-      KomboController.addLog(`📤 Загружено ${mediaFiles.length} видео файлов`);
+      logger.info(`📤 Загружено ${mediaFiles.length} видео файлов`);
 
       res.json({
         success: true,
         files: mediaFiles,
-        message: `Загружено ${mediaFiles.length} файлов`
+        message: `Загружено ${mediaFiles.length} файлов`,
+        totalSize: files.reduce((sum, file) => sum + file.size, 0)
       });
     } catch (error: any) {
       console.error('Ошибка загрузки файлов:', error);
-      KomboController.addError(`Ошибка загрузки: ${error.message}`);
       res.status(500).json({ error: error.message });
     }
   }
 
-  // Сохранение Instagram данных
+  // 👤 СОХРАНЕНИЕ INSTAGRAM ДАННЫХ В БАЗУ
   static async saveInstagramData(req: AuthRequest, res: Response) {
     try {
-      const { login, password, profileName } = req.body;
+      const { login, password, profileName, maxPostsPerDay, dropboxFolder } = req.body;
       
       if (!login || !password) {
         return res.status(400).json({ error: 'Логин и пароль обязательны' });
       }
 
-      // Сохраняем данные (в будущем в базу данных)
-      KomboController.addLog(`👤 Instagram данные сохранены: ${login}`);
+      // Валидация данных
+      if (login.length < 3) {
+        return res.status(400).json({ error: 'Логин должен содержать минимум 3 символа' });
+      }
+
+      if (password.length < 6) {
+        return res.status(400).json({ error: 'Пароль должен содержать минимум 6 символов' });
+      }
+
+      // Проверяем, не существует ли уже такой аккаунт
+      const existingAccount = await Account.findOne({ 
+        username: login.toLowerCase(),
+        createdBy: req.user!.userId 
+      });
+
+      let account: IAccount;
+
+      if (existingAccount) {
+        // Обновляем существующий аккаунт
+        existingAccount.password = password; // Будет зашифрован в pre-save middleware
+        existingAccount.displayName = profileName || login;
+        existingAccount.maxPostsPerDay = maxPostsPerDay || 3;
+        existingAccount.dropboxFolder = dropboxFolder || '/';
+        existingAccount.status = 'pending';
+        existingAccount.adsPowerStatus = 'none';
+        
+        account = await existingAccount.save();
+        logger.info(`📝 Instagram аккаунт обновлен: ${login}`);
+      } else {
+        // Создаем новый аккаунт
+        account = new Account({
+          username: login.toLowerCase(),
+          password: password, // Будет зашифрован автоматически
+          displayName: profileName || login,
+          email: login.includes('@') ? login : undefined,
+          status: 'pending',
+          maxPostsPerDay: maxPostsPerDay || 3,
+          dropboxFolder: dropboxFolder || '/',
+          defaultCaption: '🔥 Новый контент! #instagram #reels',
+          adsPowerStatus: 'none',
+          createdBy: req.user!.userId,
+          tags: ['KOMBO']
+        });
+
+        account = await account.save();
+        logger.info(`✅ Новый Instagram аккаунт создан: ${login}`);
+      }
 
       res.json({
         success: true,
-        message: 'Данные Instagram сохранены',
+        message: existingAccount ? 'Данные Instagram обновлены' : 'Новый Instagram аккаунт создан',
         account: {
-          login,
-          profileName: profileName || login
+          id: account._id,
+          login: account.username,
+          displayName: account.displayName,
+          profileName: account.displayName,
+          maxPostsPerDay: account.maxPostsPerDay,
+          dropboxFolder: account.dropboxFolder,
+          status: account.status,
+          adsPowerStatus: account.adsPowerStatus,
+          createdAt: account.createdAt
         }
       });
     } catch (error: any) {
       console.error('Ошибка сохранения Instagram данных:', error);
-      KomboController.addError(`Ошибка сохранения: ${error.message}`);
       res.status(500).json({ error: error.message });
     }
   }
@@ -357,8 +326,20 @@ export class KomboController {
         return res.status(400).json({ error: 'Данные Instagram не заполнены' });
       }
 
-      KomboController.updateStatus('Создание AdsPower профиля...', 20);
-      KomboController.addLog(`🚀 Начинаем создание AdsPower профиля для ${instagramData.login}`);
+      logger.info(`🚀 Начинаем создание AdsPower профиля для ${instagramData.login}`);
+
+      // Находим аккаунт в базе данных
+      const account = await Account.findOne({ 
+        username: instagramData.login.toLowerCase(),
+        createdBy: req.user!.userId 
+      });
+
+      if (!account) {
+        return res.status(404).json({ 
+          error: 'Instagram аккаунт не найден в базе данных',
+          message: 'Сначала сохраните данные Instagram аккаунта'
+        });
+      }
 
       const adsPowerService = new AdsPowerService();
       
@@ -369,94 +350,173 @@ export class KomboController {
           throw new Error('AdsPower не запущен или недоступен на http://local.adspower.net:50325');
         }
 
-        KomboController.updateStatus('AdsPower подключен, создаем профиль...', 40);
+        logger.info('✅ AdsPower API подключен');
         
-        // Создаем профиль
+        // Обновляем статус в базе
+        account.adsPowerStatus = 'creating';
+        await account.save();
+
+        // Создаем профиль с интеллектуальной конфигурацией
         const result = await adsPowerService.createInstagramProfile({
-          login: instagramData.login,
-          password: instagramData.password,
-          profileName: instagramData.profileName || instagramData.login
+          login: account.username,
+          password: account.decryptPassword(), // Расшифровываем пароль
+          profileName: account.displayName
         });
 
-        KomboController.updateStatus('Профиль создан успешно!', 100);
-        KomboController.addLog(`✅ AdsPower профиль создан: ID ${result.profileId}`);
+        // Сохраняем данные AdsPower профиля в базу
+        account.adsPowerProfileId = result.profileId;
+        account.adsPowerStatus = 'created';
+        account.adsPowerLastSync = new Date();
+        account.status = 'active';
+        account.adsPowerError = undefined;
+        
+        await account.save();
 
-        setTimeout(() => {
-          KomboController.updateStatus('Ожидание', 0);
-        }, 3000);
+        logger.info(`✅ AdsPower профиль создан и сохранен: ID ${result.profileId}`);
 
         res.json({
           success: true,
           result: result,
-          message: `Профиль AdsPower создан успешно (ID: ${result.profileId})`
+          message: `Профиль AdsPower создан успешно (ID: ${result.profileId})`,
+          account: {
+            id: account._id,
+            username: account.username,
+            adsPowerProfileId: account.adsPowerProfileId,
+            status: account.status,
+            adsPowerStatus: account.adsPowerStatus
+          },
+          details: {
+            profileId: result.profileId,
+            profileName: account.displayName,
+            browser: 'Chrome 138 (оптимизированный для Instagram)',
+            os: 'Windows 10/11',
+            fingerprint: 'Настроен для обхода детекции'
+          }
         });
 
       } catch (adsPowerError: any) {
-        KomboController.addError(`AdsPower ошибка: ${adsPowerError.message}`);
+        // Сохраняем ошибку в базу
+        account.adsPowerStatus = 'error';
+        account.adsPowerError = adsPowerError.message;
+        await account.save();
+        
+        logger.error(`AdsPower ошибка: ${adsPowerError.message}`);
         throw adsPowerError;
       }
 
     } catch (error: any) {
       console.error('Ошибка создания AdsPower профиля:', error);
-      KomboController.updateStatus('Ошибка создания профиля', 0);
-      KomboController.addError(error.message);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ 
+        error: error.message,
+        troubleshooting: {
+          'AdsPower не запущен': 'Запустите AdsPower и убедитесь что API доступен на порту 50325',
+          'Лимит профилей': 'Удалите неиспользуемые профили в AdsPower',
+          'Неверные данные': 'Проверьте правильность заполнения полей Instagram'
+        }
+      });
     }
   }
 
-  // Запуск автоматизации Pupiter
+  // 🎮 ЗАПУСК АВТОМАТИЗАЦИИ PUPITER
   static async startAutomation(req: AuthRequest, res: Response) {
     try {
       const { instagramData, mediaFiles, settings } = req.body;
 
-      if (KomboController.pupiterStatus.isRunning) {
-        return res.status(400).json({ error: 'Автоматизация уже запущена' });
+      // Валидация входных данных
+      if (!instagramData?.login) {
+        return res.status(400).json({ error: 'Не указан логин Instagram аккаунта' });
       }
 
-      KomboController.pupiterStatus.isRunning = true;
-      KomboController.updateStatus('Запуск Pupiter автоматизации...', 0);
-      KomboController.addLog('🎮 Pupiter: Начинаем автоматизацию Instagram');
+      if (!mediaFiles || mediaFiles.length === 0) {
+        return res.status(400).json({ error: 'Не загружены медиа файлы' });
+      }
 
-      // Симуляция работы автоматизации
-      setTimeout(() => {
-        KomboController.updateStatus('Анализ медиа файлов...', 25);
-        KomboController.addLog(`📊 Анализируем ${mediaFiles?.length || 0} видео файлов`);
-      }, 1000);
+      // Находим аккаунт в базе данных
+      const account = await Account.findOne({ 
+        username: instagramData.login.toLowerCase(),
+        createdBy: req.user!.userId 
+      });
 
-      setTimeout(() => {
-        KomboController.updateStatus('Подготовка к публикации...', 50);
-        KomboController.addLog('📝 Генерируем описания и хештеги');
-      }, 3000);
+      if (!account) {
+        return res.status(404).json({ 
+          error: 'Instagram аккаунт не найден',
+          message: 'Сначала создайте и настройте Instagram аккаунт'
+        });
+      }
 
-      setTimeout(() => {
-        KomboController.updateStatus('Публикация контента...', 75);
-        KomboController.addLog('📤 Начинаем публикацию в Instagram');
-      }, 5000);
+      if (!account.adsPowerProfileId || account.adsPowerStatus !== 'created') {
+        return res.status(400).json({ 
+          error: 'AdsPower профиль не создан',
+          message: 'Сначала создайте AdsPower профиль для этого аккаунта'
+        });
+      }
+
+      // Готовим конфигурацию для Pupiter
+      const pupiterConfig: PupiterConfig = {
+        instagramLogin: account.username,
+        instagramPassword: account.decryptPassword(),
+        profileName: account.displayName,
+        mediaFiles: mediaFiles.map((file: any) => file.filePath || file.path),
+        settings: {
+          postsPerDay: settings?.postsPerDay || account.maxPostsPerDay,
+          timeBetweenPosts: settings?.timeBetweenPosts || 4,
+          autoRestart: settings?.autoRestart || true,
+          useProxy: settings?.useProxy || false
+        }
+      };
+
+      // Обновляем статус аккаунта
+      account.isRunning = true;
+      account.lastActivity = new Date();
+      await account.save();
+
+      logger.info('🎮 Pupiter: Запуск полной автоматизации Instagram');
+
+      // Запускаем Pupiter
+      const result = await globalPupiter.startFullAutomation(pupiterConfig);
 
       res.json({
         success: true,
-        message: 'Автоматизация запущена',
-        status: KomboController.pupiterStatus
+        message: result.message,
+        pupiterStatus: globalPupiter.getStatus(),
+        account: {
+          id: account._id,
+          username: account.username,
+          status: account.status,
+          isRunning: account.isRunning,
+          adsPowerProfileId: account.adsPowerProfileId
+        },
+        config: {
+          instagramLogin: pupiterConfig.instagramLogin,
+          mediaFilesCount: pupiterConfig.mediaFiles.length,
+          settings: pupiterConfig.settings
+        }
       });
 
     } catch (error: any) {
       console.error('Ошибка запуска автоматизации:', error);
-      KomboController.pupiterStatus.isRunning = false;
-      KomboController.addError(error.message);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ 
+        error: error.message,
+        pupiterStatus: globalPupiter.getStatus()
+      });
     }
   }
 
-  // Остановка автоматизации
+  // ⏹️ ОСТАНОВКА АВТОМАТИЗАЦИИ
   static async stopAutomation(req: AuthRequest, res: Response) {
     try {
-      KomboController.pupiterStatus.isRunning = false;
-      KomboController.updateStatus('Остановлено пользователем', 0);
-      KomboController.addLog('⏹️ Pupiter: Автоматизация остановлена');
+      await globalPupiter.stopAutomation();
+
+      // Обновляем статус всех запущенных аккаунтов
+      await Account.updateMany(
+        { isRunning: true, createdBy: req.user!.userId },
+        { isRunning: false, lastActivity: new Date() }
+      );
 
       res.json({
         success: true,
-        message: 'Автоматизация остановлена'
+        message: 'Автоматизация остановлена',
+        pupiterStatus: globalPupiter.getStatus()
       });
     } catch (error: any) {
       console.error('Ошибка остановки автоматизации:', error);
@@ -464,35 +524,216 @@ export class KomboController {
     }
   }
 
-  // Вспомогательные методы
-  private static updateStatus(task: string, progress: number) {
-    KomboController.pupiterStatus.currentTask = task;
-    KomboController.pupiterStatus.progress = progress;
+  // ⏸️ ПАУЗА АВТОМАТИЗАЦИИ
+  static async pauseAutomation(req: AuthRequest, res: Response) {
+    try {
+      await globalPupiter.pauseAutomation();
+
+      res.json({
+        success: true,
+        message: 'Автоматизация приостановлена',
+        pupiterStatus: globalPupiter.getStatus()
+      });
+    } catch (error: any) {
+      console.error('Ошибка паузы автоматизации:', error);
+      res.status(500).json({ error: error.message });
+    }
   }
 
-  private static addLog(message: string) {
-    const timestamp = new Date().toLocaleTimeString();
-    const logMessage = `[${timestamp}] ${message}`;
-    KomboController.pupiterStatus.logs.push(logMessage);
-    
-    // Ограничиваем количество логов
-    if (KomboController.pupiterStatus.logs.length > 50) {
-      KomboController.pupiterStatus.logs = KomboController.pupiterStatus.logs.slice(-30);
+  // ▶️ ВОЗОБНОВЛЕНИЕ АВТОМАТИЗАЦИИ
+  static async resumeAutomation(req: AuthRequest, res: Response) {
+    try {
+      await globalPupiter.resumeAutomation();
+
+      res.json({
+        success: true,
+        message: 'Автоматизация возобновлена',
+        pupiterStatus: globalPupiter.getStatus()
+      });
+    } catch (error: any) {
+      console.error('Ошибка возобновления автоматизации:', error);
+      res.status(500).json({ error: error.message });
     }
-    
-    console.log('📝 Pupiter:', logMessage);
   }
 
-  private static addError(message: string) {
-    const timestamp = new Date().toLocaleTimeString();
-    const errorMessage = `[${timestamp}] ❌ ${message}`;
-    KomboController.pupiterStatus.errors.push(errorMessage);
-    
-    // Ограничиваем количество ошибок
-    if (KomboController.pupiterStatus.errors.length > 10) {
-      KomboController.pupiterStatus.errors = KomboController.pupiterStatus.errors.slice(-5);
+  // 🔄 ПЕРЕЗАПУСК АВТОМАТИЗАЦИИ
+  static async restartAutomation(req: AuthRequest, res: Response) {
+    try {
+      await globalPupiter.restartAutomation();
+
+      res.json({
+        success: true,
+        message: 'Автоматизация перезапущена',
+        pupiterStatus: globalPupiter.getStatus()
+      });
+    } catch (error: any) {
+      console.error('Ошибка перезапуска автоматизации:', error);
+      res.status(500).json({ error: error.message });
     }
-    
-    console.error('❌ Pupiter Error:', errorMessage);
+  }
+
+  // 🔧 ДИАГНОСТИКА СИСТЕМЫ
+  static async performDiagnostics(req: AuthRequest, res: Response) {
+    try {
+      const diagnostics = {
+        timestamp: new Date().toISOString(),
+        pupiter: globalPupiter.getStatus(),
+        database: {
+          connected: true,
+          accountsCount: await Account.countDocuments({ createdBy: req.user!.userId }),
+          activeAccounts: await Account.countDocuments({ 
+            createdBy: req.user!.userId, 
+            status: 'active' 
+          }),
+          runningAccounts: await Account.countDocuments({ 
+            createdBy: req.user!.userId, 
+            isRunning: true 
+          })
+        },
+        system: {
+          adsPowerAvailable: false,
+          dropboxAvailable: false,
+          diskSpace: 'N/A',
+          memory: process.memoryUsage(),
+          uptime: process.uptime()
+        }
+      };
+
+      // Проверка AdsPower
+      try {
+        const adsPowerService = new AdsPowerService();
+        diagnostics.system.adsPowerAvailable = await adsPowerService.checkConnection();
+      } catch {
+        diagnostics.system.adsPowerAvailable = false;
+      }
+
+      // Проверка Dropbox
+      try {
+        const dropboxService = new DropboxService();
+        diagnostics.system.dropboxAvailable = dropboxService.isServiceEnabled();
+      } catch {
+        diagnostics.system.dropboxAvailable = false;
+      }
+
+      res.json({
+        success: true,
+        message: 'Диагностика завершена',
+        diagnostics
+      });
+
+    } catch (error: any) {
+      console.error('Ошибка диагностики:', error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  // 📊 ПОЛУЧЕНИЕ ПОДРОБНОЙ СТАТИСТИКИ
+  static async getDetailedStats(req: AuthRequest, res: Response) {
+    try {
+      const pupiterStatus = globalPupiter.getStatus();
+      
+      // Получаем статистику из базы данных
+      const totalAccounts = await Account.countDocuments({ createdBy: req.user!.userId });
+      const activeAccounts = await Account.countDocuments({ 
+        createdBy: req.user!.userId, 
+        status: 'active' 
+      });
+      const runningAccounts = await Account.countDocuments({ 
+        createdBy: req.user!.userId, 
+        isRunning: true 
+      });
+
+      // Агрегированная статистика постов
+      const postsStats = await Account.aggregate([
+        { $match: { createdBy: req.user!.userId } },
+        {
+          $group: {
+            _id: null,
+            totalPosts: { $sum: '$stats.totalPosts' },
+            successfulPosts: { $sum: '$stats.successfulPosts' },
+            failedPosts: { $sum: '$stats.failedPosts' },
+            postsToday: { $sum: '$postsToday' }
+          }
+        }
+      ]);
+
+      const stats = {
+        overview: {
+          isRunning: pupiterStatus.isRunning,
+          isPaused: pupiterStatus.isPaused,
+          currentTask: pupiterStatus.currentTask,
+          progress: pupiterStatus.progress
+        },
+        accounts: {
+          total: totalAccounts,
+          active: activeAccounts,
+          running: runningAccounts,
+          withAdsPower: await Account.countDocuments({ 
+            createdBy: req.user!.userId, 
+            adsPowerStatus: 'created' 
+          })
+        },
+        automation: {
+          adsPowerProfileId: pupiterStatus.adsPowerProfileId,
+          adsPowerStatus: pupiterStatus.adsPowerStatus,
+          instagramStatus: pupiterStatus.instagramStatus,
+          queueStatus: pupiterStatus.queueStatus
+        },
+        performance: {
+          publishedToday: postsStats[0]?.postsToday || 0,
+          totalPublished: postsStats[0]?.totalPosts || 0,
+          successfulPosts: postsStats[0]?.successfulPosts || 0,
+          failedPosts: postsStats[0]?.failedPosts || 0,
+          remainingInQueue: pupiterStatus.remainingInQueue,
+          successRate: postsStats[0]?.totalPosts > 0 ? 
+            ((postsStats[0]?.successfulPosts / postsStats[0]?.totalPosts) * 100).toFixed(1) + '%' : 
+            '100%'
+        },
+        logs: {
+          recent: pupiterStatus.logs.slice(-10),
+          errors: pupiterStatus.errors.slice(-5),
+          lastActivity: pupiterStatus.lastActivity
+        }
+      };
+
+      res.json({
+        success: true,
+        stats
+      });
+
+    } catch (error: any) {
+      console.error('Ошибка получения статистики:', error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  // 📋 ПОЛУЧЕНИЕ СПИСКА АККАУНТОВ ПОЛЬЗОВАТЕЛЯ
+  static async getUserAccounts(req: AuthRequest, res: Response) {
+    try {
+      const accounts = await Account.find({ createdBy: req.user!.userId })
+        .select('username displayName status isRunning adsPowerStatus adsPowerProfileId maxPostsPerDay stats lastActivity createdAt')
+        .sort({ createdAt: -1 });
+
+      res.json({
+        success: true,
+        accounts: accounts.map(account => ({
+          id: account._id,
+          username: account.username,
+          displayName: account.displayName,
+          status: account.status,
+          isRunning: account.isRunning,
+          adsPowerStatus: account.adsPowerStatus,
+          adsPowerProfileId: account.adsPowerProfileId,
+          maxPostsPerDay: account.maxPostsPerDay,
+          stats: account.stats,
+          lastActivity: account.lastActivity,
+          createdAt: account.createdAt
+        }))
+      });
+
+    } catch (error: any) {
+      console.error('Ошибка получения аккаунтов:', error);
+      res.status(500).json({ error: error.message });
+    }
   }
 } 

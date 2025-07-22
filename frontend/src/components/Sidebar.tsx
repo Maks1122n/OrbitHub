@@ -6,13 +6,15 @@ import {
   Bot, 
   Folder, 
   BarChart3, 
-  Settings
+  Settings,
+  Zap
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: Home },
   { name: 'Accounts', href: '/accounts', icon: Users },
+  { name: 'KOMBO-NEW', href: '/kombo-new', icon: Zap },
   { name: 'Automation', href: '/automation', icon: Bot },
   { name: 'Dropbox', href: '/dropbox', icon: Folder },
   { name: 'Analytics', href: '/analytics', icon: BarChart3 },

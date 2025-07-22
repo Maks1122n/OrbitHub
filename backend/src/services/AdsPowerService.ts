@@ -235,6 +235,16 @@ export class AdsPowerService {
     }
   }
 
+  // Alias для совместимости с PupiterService
+  async stopProfile(profileId: string): Promise<boolean> {
+    return this.stopBrowser(profileId);
+  }
+
+  // Alias для совместимости с PupiterService  
+  async startProfile(profileId: string): Promise<BrowserSession> {
+    return this.startBrowser(profileId);
+  }
+
   // Проверка статуса браузера
   async getBrowserStatus(profileId: string): Promise<'Active' | 'Inactive'> {
     try {
@@ -249,6 +259,22 @@ export class AdsPowerService {
     } catch (error) {
       logger.error(`Failed to get browser status for profile ${profileId}:`, error);
       return 'Inactive';
+    }
+  }
+
+  // Проверка статуса профиля для совместимости с PupiterService
+  async checkProfileStatus(profileId: string): Promise<{ isActive: boolean; status: string }> {
+    try {
+      const status = await this.getBrowserStatus(profileId);
+      return {
+        isActive: status === 'Active',
+        status: status
+      };
+    } catch (error) {
+      return {
+        isActive: false,
+        status: 'Error'
+      };
     }
   }
 

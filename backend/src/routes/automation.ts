@@ -12,17 +12,13 @@ router.post('/start', AutomationController.startAutomation);
 router.post('/stop', AutomationController.stopAutomation);
 router.get('/status', AutomationController.getAutomationStatus);
 
-// Тестирование и диагностика
-router.post('/test-login', AutomationController.testInstagramLogin);
-router.get('/health', AutomationController.healthCheck);
-router.get('/sessions', AutomationController.getActiveSessions);
+// Публикация конкретного поста
+router.post('/publish/:postId', AutomationController.publishPost);
 
-// Публикация постов
-router.post('/publish-now/:postId', AutomationController.publishPostNow);
-router.get('/results/:postId', AutomationController.getPublishResult);
-router.get('/results', AutomationController.getAllPublishResults);
+// Логи автоматизации
+router.get('/logs', AutomationController.getAutomationLogs);
 
-// Экстренные функции
-router.post('/emergency-stop', AutomationController.emergencyStop);
+// Настройки автоматизации
+router.put('/settings', AutomationController.updateAutomationSettings);
 
 export default router; 

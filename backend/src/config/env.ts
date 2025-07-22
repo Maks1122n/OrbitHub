@@ -43,5 +43,11 @@ export const config = {
   encryptionKey: process.env.ENCRYPTION_KEY || 'default-encryption-key-change-in-production',
   
   // Client URL for CORS
-  clientUrl: process.env.CLIENT_URL || 'http://localhost:3000'
+  clientUrl: process.env.CLIENT_URL || 'http://localhost:3000',
+  
+  // Instagram настройки
+  instagram: {
+    minDelayBetweenPosts: parseInt(process.env.POST_DELAY_MIN || '300000'), // 5 минут
+    maxDelayBetweenPosts: parseInt(process.env.POST_DELAY_MAX || '600000')  // 10 минут
+  }
 }; 
