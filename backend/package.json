@@ -5,7 +5,10 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
     "build": "tsc",
-    "start": "node dist/app.js"
+    "start": "node dist/app.js",
+    "test": "echo \"Backend tests will be added\" && exit 0",
+    "validate": "npm run build && npm run test",
+    "lint": "echo \"Linting will be added\" && exit 0"
   },
   "dependencies": {
     "axios": "^1.5.0",

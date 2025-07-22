@@ -96,7 +96,7 @@ export class InstagramAutomation {
       await this.puppeteerService.humanClick(this.page, this.selectors.loginButton);
       
       // Ожидание результата логина
-      await this.page.waitForTimeout(3000);
+      await new Promise(resolve => setTimeout(resolve, 3000));
       
       // Проверка на ошибки логина
       const errorElement = await this.page.$(this.selectors.loginErrorMessage);
@@ -268,7 +268,7 @@ export class InstagramAutomation {
           break;
         }
         
-        await this.puppeteerService.humanDelay(2000, 3000);
+        await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 1000));
       }
       
       // Добавление описания
@@ -462,7 +462,7 @@ export class InstagramAutomation {
       }
       
       await this.page.screenshot({ 
-        path: screenshotPath,
+        path: screenshotPath as `${string}.png`,
         fullPage: true
       });
       

@@ -61,6 +61,9 @@ export const authenticateToken = async (
   }
 };
 
+// Alias for compatibility
+export const auth = authenticateToken;
+
 export const requireAdmin = (
   req: AuthRequest,
   res: Response,

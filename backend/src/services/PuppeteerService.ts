@@ -159,14 +159,6 @@ export class PuppeteerService {
           get: () => undefined,
         });
 
-        // Переопределение permissions API
-        const originalQuery = window.navigator.permissions.query;
-        window.navigator.permissions.query = (parameters) => (
-          parameters.name === 'notifications' ?
-            Promise.resolve({ state: Notification.permission }) :
-            originalQuery(parameters)
-        );
-
         // Скрытие Chrome runtime
         if ('chrome' in window) {
           delete window.chrome;
@@ -295,8 +287,7 @@ export class PuppeteerService {
       let adspowerConnected = false;
       try {
         const response = await fetch('http://local.adspower.net:50325/api/v1/status', {
-          method: 'GET',
-          timeout: 5000
+          method: 'GET'
         });
         adspowerConnected = response.ok;
       } catch {

@@ -3,7 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import path from 'path';
-import { connectDB } from './config/database';
+import { connectDatabase } from './config/database';
 import logger from './utils/logger';
 
 // Routes
@@ -15,7 +15,7 @@ import automationRoutes from './routes/automation';
 const app = express();
 
 // Database connection
-connectDB();
+connectDatabase();
 
 // Middleware
 app.use(helmet());

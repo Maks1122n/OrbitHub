@@ -1,110 +1,77 @@
 import { Request, Response, NextFunction } from 'express';
+import { AuthRequest } from './auth';
 import logger from '../utils/logger';
-import { config } from '../config/env';
 
-// Интерфейс для кастомных ошибок
-export interface CustomError extends Error {
-  statusCode?: number;
-  isOperational?: boolean;
-}
-
-// Класс для операционных ошибок
-export class AppError extends Error implements CustomError {
-  statusCode: number;
-  isOperational: boolean;
-
-  constructor(message: string, statusCode: number = 500) {
-    super(message);
-    this.statusCode = statusCode;
-    this.isOperational = true;
-
-    Error.captureStackTrace(this, this.constructor);
-  }
-}
-
-// Middleware для обработки ошибок
 export const errorHandler = (
-  err: CustomError,
+  err: any,
   req: Request,
   res: Response,
   next: NextFunction
 ): void => {
-  // Устанавливаем статус код по умолчанию
-  let statusCode = err.statusCode || 500;
-  let message = err.message || 'Internal Server Error';
-  let errors: any = undefined;
-
-  // Логируем ошибку
-  logger.error('Error caught by errorHandler:', {
-    message: err.message,
-    statusCode,
+  logger.error('Error caught by error handler:', {
+    error: err.message,
     stack: err.stack,
     url: req.url,
     method: req.method,
-    ip: req.ip,
-    userAgent: req.get('User-Agent'),
-    userId: req.user?._id
+    userId: (req as AuthRequest).user?.userId,
+    timestamp: new Date().toISOString()
   });
 
-  // Обработка специфичных ошибок MongoDB
+  // Mongoose validation error
   if (err.name === 'ValidationError') {
-    statusCode = 400;
-    message = 'Validation Error';
-    // @ts-ignore
-    errors = Object.values(err.errors).map((e: any) => ({
-      field: e.path,
-      message: e.message
-    }));
+    const errors = Object.values(err.errors).map((val: any) => val.message);
+    res.status(400).json({
+      success: false,
+      error: 'Validation Error',
+      details: errors
+    });
+    return;
   }
 
-  if (err.name === 'CastError') {
-    statusCode = 400;
-    message = 'Invalid ID format';
+  // Mongoose duplicate key error
+  if (err.code === 11000) {
+    res.status(400).json({
+      success: false,
+      error: 'Duplicate field value entered'
+    });
+    return;
   }
 
-  if (err.name === 'MongoServerError' && (err as any).code === 11000) {
-    statusCode = 400;
-    message = 'Duplicate field value';
-    const field = Object.keys((err as any).keyValue)[0];
-    errors = [{
-      field,
-      message: `${field} already exists`
-    }];
-  }
-
-  // Обработка ошибок JSON Web Token
+  // JWT error
   if (err.name === 'JsonWebTokenError') {
-    statusCode = 401;
-    message = 'Invalid token';
+    res.status(401).json({
+      success: false,
+      error: 'Invalid token'
+    });
+    return;
   }
 
+  // JWT expired error
   if (err.name === 'TokenExpiredError') {
-    statusCode = 401;
-    message = 'Token expired';
+    res.status(401).json({
+      success: false,
+      error: 'Token expired'
+    });
+    return;
   }
 
-  // Ответ клиенту
-  const response: any = {
+  // Default error
+  res.status(err.statusCode || 500).json({
     success: false,
-    message,
-    ...(errors && { errors }),
-    ...(config.nodeEnv === 'development' && { 
-      stack: err.stack,
-      originalError: err.message 
-    })
-  };
-
-  res.status(statusCode).json(response);
+    error: err.message || 'Internal Server Error'
+  });
 };
 
-// Middleware для обработки несуществующих маршрутов
 export const notFoundHandler = (
   req: Request,
   res: Response,
   next: NextFunction
 ): void => {
-  const error = new AppError(`Route ${req.originalUrl} not found`, 404);
-  next(error);
+  const error = new Error(`Not found - ${req.originalUrl}`);
+  res.status(404).json({
+    success: false,
+    error: error.message
+  });
 };
 
 // Middleware для перехвата асинхронных ошибок

@@ -4,6 +4,7 @@ export interface IPost extends Document {
   _id: string;
   title: string;
   content: string;
+  location?: string;
   mediaUrl?: string;
   mediaType: 'image' | 'video';
   scheduledAt?: Date;
@@ -47,6 +48,11 @@ const PostSchema = new Schema<IPost>({
     required: [true, 'Post content is required'],
     trim: true,
     maxlength: [2200, 'Content cannot exceed 2200 characters']
+  },
+  location: {
+    type: String,
+    trim: true,
+    maxlength: [100, 'Location cannot exceed 100 characters']
   },
   mediaUrl: {
     type: String,
