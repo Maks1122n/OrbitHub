@@ -63,7 +63,8 @@ import {
   Heart,
   Zap as ZapIcon
 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { useAuth } from '../contexts/AuthContext';
+import { api } from '../lib/api';
 
 // Полная TypeScript типизация
 interface MediaFile {
@@ -842,31 +843,63 @@ export default function KomboNew() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const { logout, user } = useAuth();
+
   return (
-    <div className="space-y-6 p-6">
-      {/* Заголовок с индикатором подключения */}
-      <div className="text-center mb-8">
-        <div className="flex items-center justify-center gap-3 mb-2">
-          <h1 className="text-4xl font-bold text-white">
-            🎮 KOMBO-NEW - Полная автоматизация Instagram
-          </h1>
-          <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
-            serverConnected ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-          }`}>
-            <div className={`w-2 h-2 rounded-full ${serverConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
-            {serverConnected ? 'Сервер подключен' : 'Сервер недоступен'}
+    <div className="min-h-screen bg-gray-900">
+      {/* Компактный заголовок SPA */}
+      <div className="sticky top-0 z-50 bg-gray-800 border-b border-gray-700 px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center">
+                <span className="text-xl font-bold text-white">OH</span>
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-white">OrbitHub</h1>
+                <p className="text-sm text-gray-400">KOMBO - Instagram Automation</p>
+              </div>
+            </div>
+            <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
+              serverConnected ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+            }`}>
+              <div className={`w-2 h-2 rounded-full ${serverConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
+              {serverConnected ? 'Сервер подключен' : 'Сервер недоступен'}
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <div className="text-sm text-gray-300">
+              {user?.email}
+            </div>
+            <Button
+              onClick={logout}
+              variant="outline"
+              size="sm"
+              className="text-gray-300 border-gray-600 hover:bg-gray-700"
+            >
+              Выйти
+            </Button>
           </div>
         </div>
-        <p className="text-gray-400">
-          Pupiter автоматически создает профили AdsPower и публикует контент
-        </p>
       </div>
 
+      <div className="space-y-4 p-4">
+        {/* Компактный заголовок секции */}
+        <div className="text-center mb-4">
+          <h2 className="text-2xl font-bold text-white mb-2">
+            🎮 Полная автоматизация Instagram
+          </h2>
+          <p className="text-gray-400 text-sm">
+            Pupiter автоматически создает профили AdsPower и публикует контент
+          </p>
+        </div>
+
       {/* Pupiter Dashboard с улучшенными индикаторами */}
-      <Card className="mb-6">
-        <div className="p-6 border-b border-gray-700">
-          <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-            <Bot className="h-6 w-6 text-green-400" />
+      <Card className="mb-4">
+        <div className="p-4 border-b border-gray-700">
+          <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+            <Bot className="h-5 w-5 text-green-400" />
             Pupiter - Автоматический пульт управления
             {pupiterStatus.isRunning && (
               <div className="ml-auto flex items-center gap-2">
@@ -874,11 +907,11 @@ export default function KomboNew() {
                 <span className="text-sm text-green-400">Активен</span>
               </div>
             )}
-          </h2>
+          </h3>
         </div>
-        <div className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div className="bg-gray-700 p-4 rounded-lg">
+        <div className="p-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+            <div className="bg-gray-700 p-3 rounded-lg">
               <div className="flex items-center justify-between">
                 <span className="text-gray-300">Статус</span>
                 <Activity className={`h-5 w-5 ${pupiterStatus.isRunning ? 'text-green-400' : 'text-gray-400'}`} />
@@ -888,7 +921,7 @@ export default function KomboNew() {
               </div>
               <div className="text-sm text-gray-400">{pupiterStatus.currentTask}</div>
             </div>
-            <div className="bg-gray-700 p-4 rounded-lg">
+            <div className="bg-gray-700 p-3 rounded-lg">
               <div className="flex items-center justify-between">
                 <span className="text-gray-300">Прогресс</span>
                 <Monitor className="h-5 w-5 text-blue-400" />
@@ -901,7 +934,7 @@ export default function KomboNew() {
                 ></div>
               </div>
             </div>
-            <div className="bg-gray-700 p-4 rounded-lg">
+            <div className="bg-gray-700 p-3 rounded-lg">
               <div className="flex items-center justify-between">
                 <span className="text-gray-300">Профили</span>
                 <Target className="h-5 w-5 text-purple-400" />
@@ -986,7 +1019,7 @@ export default function KomboNew() {
           </div>
 
           {/* НОВЫЕ ДОПОЛНИТЕЛЬНЫЕ КНОПКИ */}
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-4">
             <Button 
               onClick={handleTestAllConnections}
               disabled={loadingStates.testConnections}
@@ -1080,15 +1113,17 @@ export default function KomboNew() {
         </div>
       </Card>
 
-      {/* Секция 1: Управление контентом с превью */}
-      <Card>
-        <div className="p-6 border-b border-gray-700">
-          <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-            <Folder className="h-6 w-6 text-blue-400" />
-            Управление контентом
-          </h2>
-        </div>
-        <div className="p-6 space-y-4">
+      {/* Двухколоночная сетка для компактности */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        {/* Секция 1: Управление контентом с превью */}
+        <Card>
+          <div className="p-4 border-b border-gray-700">
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+              <Folder className="h-5 w-5 text-blue-400" />
+              Управление контентом
+            </h3>
+          </div>
+        <div className="p-4 space-y-3">
           <div className="flex gap-4">
             <Button 
               onClick={handleDropboxConnect}
@@ -1314,17 +1349,17 @@ export default function KomboNew() {
             )}
           </div>
         </div>
-      </Card>
+        </Card>
 
-      {/* Секция 2: Данные Instagram аккаунта с валидацией */}
-      <Card>
-        <div className="p-6 border-b border-gray-700">
-          <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-            <Shield className="h-6 w-6 text-pink-400" />
-            Данные Instagram аккаунта
-          </h2>
-        </div>
-        <div className="p-6 space-y-4">
+        {/* Секция 2: Данные Instagram аккаунта с валидацией */}
+        <Card>
+          <div className="p-4 border-b border-gray-700">
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+              <Shield className="h-5 w-5 text-pink-400" />
+              Данные Instagram аккаунта
+            </h3>
+          </div>
+        <div className="p-4 space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label htmlFor="instagram-login">Instagram логин/email</Label>
@@ -1466,16 +1501,17 @@ export default function KomboNew() {
             Автоматически настраивает Chrome 136-138, Windows 10/11, WebGL оптимизацию
           </div>
         </div>
-      </Card>
+        </Card>
+      </div>
 
       {/* Секция 4: Табло настроек с управлением */}
-      <Card>
-        <div className="p-6 border-b border-gray-700">
+      <Card className="mb-4">
+        <div className="p-4 border-b border-gray-700">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-              <Settings className="h-6 w-6 text-gray-400" />
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+              <Settings className="h-5 w-5 text-gray-400" />
               Табло настроек автоматизации
-            </h2>
+            </h3>
             {/* КНОПКИ УПРАВЛЕНИЯ НАСТРОЙКАМИ */}
             <div className="flex items-center gap-2">
               <Button
@@ -1533,8 +1569,8 @@ export default function KomboNew() {
             </div>
           </div>
         </div>
-        <div className="p-6 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="p-4 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label htmlFor="posts-per-day">Количество постов в день: {settings.postsPerDay}</Label>
               <input
@@ -1599,17 +1635,17 @@ export default function KomboNew() {
 
       {/* Секция 5: Мои Instagram аккаунты с улучшенным отображением */}
       {userAccounts.length > 0 && (
-        <Card>
-          <div className="p-6 border-b border-gray-700">
-            <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-              <Users className="h-6 w-6 text-blue-400" />
+        <Card className="mb-4">
+          <div className="p-4 border-b border-gray-700">
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+              <Users className="h-5 w-5 text-blue-400" />
               Мои Instagram аккаунты ({userAccounts.length})
               {loadingStates.loadingAccounts && (
                 <Loader2 className="h-4 w-4 ml-2 animate-spin" />
               )}
-            </h2>
+            </h3>
           </div>
-          <div className="p-6">
+          <div className="p-4">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {userAccounts.map((account) => (
                 <div key={account.id} className="bg-gray-700 p-4 rounded-lg border border-gray-600">
@@ -1750,17 +1786,17 @@ export default function KomboNew() {
       )}
 
       {/* Секция 6: Логи и мониторинг с улучшенным дизайном */}
-      <Card>
-        <div className="p-6 border-b border-gray-700">
-          <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-            <BarChart3 className="h-6 w-6 text-green-400" />
+      <Card className="mb-4">
+        <div className="p-4 border-b border-gray-700">
+          <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+            <BarChart3 className="h-5 w-5 text-green-400" />
             Логи и мониторинг
             <div className="ml-auto text-sm text-gray-400">
               Последнее обновление: {new Date(pupiterStatus.lastActivity).toLocaleTimeString()}
             </div>
-          </h2>
+          </h3>
         </div>
-        <div className="p-6">
+        <div className="p-4">
           <div className="bg-black p-4 rounded-lg font-mono text-sm max-h-64 overflow-y-auto">
             {pupiterStatus.logs.length > 0 ? (
               pupiterStatus.logs.map((log, index) => (
@@ -1789,6 +1825,7 @@ export default function KomboNew() {
           )}
         </div>
       </Card>
+      </div>
     </div>
   );
 } 

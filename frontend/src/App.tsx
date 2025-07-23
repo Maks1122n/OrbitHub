@@ -1,10 +1,9 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
-import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
 import KomboNew from './pages/KomboNew';
 
@@ -24,22 +23,23 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <Router>
-          <div className="App">
+          <div className="App min-h-screen bg-gray-900">
             <Routes>
               {/* Public routes */}
               <Route path="/login" element={<Login />} />
               
-              {/* Protected routes */}
+              {/* Protected Single Page App */}
               <Route
                 path="/"
                 element={
                   <ProtectedRoute>
-                    <Layout>
-                      <KomboNew />
-                    </Layout>
+                    <KomboNew />
                   </ProtectedRoute>
                 }
               />
+              
+              {/* Redirect any other path to main page */}
+              <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
             
             {/* Toast notifications */}
