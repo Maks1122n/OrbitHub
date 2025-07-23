@@ -65,8 +65,10 @@ try {
       res.json({
         success: true,
         message: 'Login successful',
-        user: { email, name: 'OrbitHub Admin' },
-        token: 'mock-jwt-token'
+        data: {
+          user: { email, name: 'OrbitHub Admin' },
+          token: 'mock-jwt-token'
+        }
       });
     } else {
       res.status(401).json({
