@@ -1,7 +1,7 @@
 import { Server as HttpServer } from 'http';
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { verifyAccessToken } from '../utils/jwt';
-import { AutomationService } from './AutomationService';
+import { AutomationService } from './AutomationService.simple-render';
 import logger from '../utils/logger';
 
 interface AuthenticatedSocket extends Socket {

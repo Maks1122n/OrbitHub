@@ -30,7 +30,8 @@ export class AccountController {
           let browserStatus = 'Unknown';
           if (account.adsPowerProfileId) {
             try {
-              browserStatus = await adsPowerService.getBrowserStatus(account.adsPowerProfileId);
+              const statusResult = await adsPowerService.getBrowserStatus(account.adsPowerProfileId);
+              browserStatus = statusResult.success ? statusResult.status || 'unknown' : 'error';
             } catch (error) {
               // Игнорируем ошибки статуса
             }
@@ -83,7 +84,8 @@ export class AccountController {
       let browserStatus = 'Unknown';
       if (account.adsPowerProfileId) {
         try {
-          browserStatus = await adsPowerService.getBrowserStatus(account.adsPowerProfileId);
+          const statusResult = await adsPowerService.getBrowserStatus(account.adsPowerProfileId);
+          browserStatus = statusResult.success ? statusResult.status || 'unknown' : 'error';
         } catch (error) {
           // Игнорируем ошибки статуса
         }
@@ -153,7 +155,16 @@ export class AccountController {
           notes: `OrbitHub account: ${accountData.displayName}`
         };
 
-        adsPowerProfileId = await adsPowerService.createProfile(profileData);
+        const profileResult = await adsPowerService.createProfile(profileData);
+        if (profileResult.success && profileResult.profileId) {
+          adsPowerProfileId = profileResult.profileId;
+        } else {
+          res.status(500).json({
+            success: false,
+            error: profileResult.error || 'Failed to create AdsPower profile'
+          });
+          return;
+        }
         logger.info(`AdsPower profile created for account ${accountData.username}: ${adsPowerProfileId}`);
       } catch (error) {
         logger.error('Failed to create AdsPower profile:', error);
@@ -493,7 +504,8 @@ export class AccountController {
       // Проверяем статус браузера
       if (account.adsPowerProfileId) {
         try {
-          browserStatus = await adsPowerService.getBrowserStatus(account.adsPowerProfileId);
+          const statusResult = await adsPowerService.getBrowserStatus(account.adsPowerProfileId);
+          browserStatus = statusResult.success ? statusResult.status || 'unknown' : 'error';
         } catch (error) {
           logger.warn(`Failed to get browser status for ${account.username}:`, error);
         }
