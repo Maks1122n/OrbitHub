@@ -346,7 +346,7 @@ export class KomboController {
         adsPowerError = error.message;
         await account.save();
         
-        logger.error(`❌ Ошибка автоматического создания AdsPower профиля для ${account.username}:`, error);
+        logger.error(`❌ Ошибка автоматического создания AdsPower профиля для ${account.username}: ${error instanceof Error ? error.message : String(error)}`);
       }
 
       res.json({

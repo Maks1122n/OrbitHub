@@ -66,7 +66,7 @@ export class AdsPowerService {
         return config;
       },
       (error) => {
-        logger.error('AdsPower API Request Error:', error);
+        logger.error(`AdsPower API Request Error: ${error instanceof Error ? error.message : String(error)}`);
         return Promise.reject(error);
       }
     );
@@ -93,7 +93,7 @@ export class AdsPowerService {
       const response = await this.api.get('/api/v1/status');
       return response.status === 200;
     } catch (error) {
-      logger.error('AdsPower connection failed:', error);
+      logger.error(`AdsPower connection failed: ${error instanceof Error ? error.message : String(error)}`);
       return false;
     }
   }
@@ -148,7 +148,7 @@ export class AdsPowerService {
         throw new Error(`AdsPower API error: ${response.data.msg}`);
       }
     } catch (error: any) {
-      logger.error('Failed to create AdsPower profile:', error);
+      logger.error(`Failed to create AdsPower profile: ${error instanceof Error ? error.message : String(error)}`);
       throw new Error(`Profile creation failed: ${error.response?.data?.msg || error.message}`);
     }
   }

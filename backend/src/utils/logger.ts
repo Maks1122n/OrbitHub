@@ -17,7 +17,26 @@ const logFormat = winston.format.combine(
   winston.format.printf(({ level, message, timestamp, ...metadata }) => {
     let msg = `${timestamp} [${level.toUpperCase()}]: ${message}`;
     if (Object.keys(metadata).length > 0) {
-      msg += ` ${JSON.stringify(metadata)}`;
+      try {
+        // Безопасная сериализация с обработкой циклических ссылок
+        msg += ` ${JSON.stringify(metadata, (key, value) => {
+          // Исключаем циклические объекты и HTTP агенты
+          if (typeof value === 'object' && value !== null) {
+            if (value.constructor && (
+              value.constructor.name === 'Agent' ||
+              value.constructor.name === 'ClientRequest' ||
+              value.constructor.name === 'IncomingMessage' ||
+              key === 'socket' || key === 'agent' || key === '_httpMessage'
+            )) {
+              return '[Circular/HTTP Object]';
+            }
+          }
+          return value;
+        })}`;
+      } catch (error) {
+        // Если все равно не удается сериализовать, используем toString
+        msg += ` [Serialization Error: ${error instanceof Error ? error.message : 'Unknown'}]`;
+      }
     }
     return msg;
   })
