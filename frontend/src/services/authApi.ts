@@ -90,6 +90,17 @@ export const authApi = {
     }
   },
 
+  // Получение профиля пользователя (для проверки токена)
+  getProfile: async (): Promise<{ success: boolean; data: { user: User } }> => {
+    try {
+      const response = await api.get('/auth/profile');
+      return response;
+    } catch (error) {
+      console.error('Get profile error:', error);
+      throw error;
+    }
+  },
+
   // Обновление профиля
   updateProfile: async (data: Partial<User>): Promise<User> => {
     try {

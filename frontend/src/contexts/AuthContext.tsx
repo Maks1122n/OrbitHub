@@ -11,11 +11,11 @@ interface AuthContextType {
   updateUser: (userData: Partial<User>) => void;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
 interface AuthProviderProps {
   children: ReactNode;
 }
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -30,26 +30,43 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const initializeAuth = async () => {
     try {
+      console.log('🔑 AUTH_CONTEXT: Initializing auth...');
       const token = localStorage.getItem('authToken');
+      console.log('🔑 AUTH_CONTEXT: Token from localStorage:', token ? 'EXISTS' : 'NONE');
+      
       if (!token) {
+        console.log('🔑 AUTH_CONTEXT: No token found, setting loading false');
         setIsLoading(false);
         return;
       }
 
+      console.log('🔑 AUTH_CONTEXT: Making profile request...');
       // Проверяем валидность токена
       const response = await authApi.getProfile();
-      if (response.data.success) {
-        setUser(response.data.data.user);
+      console.log('🔑 AUTH_CONTEXT: Profile response:', response);
+      
+      if (response && response.success) {
+        console.log('🔑 AUTH_CONTEXT: Profile valid, setting user:', response.data.user);
+        setUser(response.data.user);
       } else {
+        console.log('🔑 AUTH_CONTEXT: Profile invalid, clearing tokens');
         // Токен невалидный, удаляем его
         localStorage.removeItem('authToken');
         localStorage.removeItem('user');
       }
     } catch (error) {
-      console.error('Auth initialization error:', error);
+      console.error('🔑 AUTH_CONTEXT: Auth initialization error:', error);
+      console.error('🔑 AUTH_CONTEXT: Error details:', error.response?.data);
       localStorage.removeItem('authToken');
       localStorage.removeItem('user');
+      
+      // Если ошибка 401, показываем уведомление
+      if (error.response?.status === 401) {
+        console.log('🔑 AUTH_CONTEXT: 401 error - session expired');
+        toast.error('Сессия истекла. Пожалуйста, войдите заново.');
+      }
     } finally {
+      console.log('🔑 AUTH_CONTEXT: Auth initialization completed, setting loading false');
       setIsLoading(false);
     }
   };
@@ -97,6 +114,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const logout = () => {
+    console.log('🔑 AUTH_CONTEXT: Logging out...');
     try {
       // Отправляем запрос на сервер для logout (опционально)
       authApi.logout().catch(console.error);
