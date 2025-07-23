@@ -153,11 +153,15 @@ export class InstagramController {
 
       try {
         // Запускаем браузер
-        const session = await adsPowerService.startBrowser(account.adsPowerProfileId);
+        const sessionResult = await adsPowerService.startBrowser(account.adsPowerProfileId);
+        
+        if (!sessionResult.success || !sessionResult.data) {
+          throw new Error(sessionResult.error || 'Failed to start browser session');
+        }
 
         // Публикуем видео
         const publishResult = await instagramService.publishVideoToReels(
-          session,
+          sessionResult.data,
           tempVideoPath,
           caption || account.defaultCaption,
           { hashtags, location }
@@ -262,11 +266,15 @@ export class InstagramController {
       }
 
       // Запускаем браузер
-      const session = await adsPowerService.startBrowser(account.adsPowerProfileId);
+      const sessionResult = await adsPowerService.startBrowser(account.adsPowerProfileId);
+      
+      if (!sessionResult.success || !sessionResult.data) {
+        throw new Error(sessionResult.error || 'Failed to start browser session');
+      }
 
       try {
         // Проверяем статус аккаунта
-        const status = await instagramService.checkAccountStatus(session, account.username);
+        const status = await instagramService.checkAccountStatus(sessionResult.data, account.username);
 
         // Обновляем статус в базе данных
         let newStatus = account.status;
@@ -425,10 +433,14 @@ export class InstagramController {
         return;
       }
 
-      const session = await adsPowerService.startBrowser(account.adsPowerProfileId);
+      const sessionResult = await adsPowerService.startBrowser(account.adsPowerProfileId);
+      
+      if (!sessionResult.success || !sessionResult.data) {
+        throw new Error(sessionResult.error || 'Failed to start browser session');
+      }
 
       try {
-        const restored = await instagramService.restoreSession(session, account.username);
+        const restored = await instagramService.restoreSession(sessionResult.data, account.username);
 
         if (restored) {
           await Account.findByIdAndUpdate(accountId, {

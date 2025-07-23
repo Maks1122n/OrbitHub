@@ -34,13 +34,22 @@ export class AdsPowerController {
         notes: 'Test profile created from OrbitHub'
       };
 
-      const profileId = await adsPowerService.createProfile(profileData);
-      const profile = await adsPowerService.getProfile(profileId);
+      const profileResult = await adsPowerService.createProfile(profileData);
+      
+      if (!profileResult.success) {
+        res.status(500).json({
+          success: false,
+          error: profileResult.error || 'Failed to create profile'
+        });
+        return;
+      }
+
+      const profile = await adsPowerService.getProfile(profileResult.profileId!);
 
       res.json({
         success: true,
         data: {
-          profileId,
+          profileId: profileResult.profileId,
           profile,
           message: 'Test profile created successfully'
         }
@@ -103,25 +112,31 @@ export class AdsPowerController {
   // Получение всех профилей
   static async getAllProfiles(req: Request, res: Response): Promise<void> {
     try {
-      const profiles = await adsPowerService.getAllProfiles();
+      const profilesResult = await adsPowerService.getAllProfiles();
+      
+      if (!profilesResult.success || !profilesResult.data) {
+        res.status(500).json({
+          success: false,
+          error: profilesResult.error || 'Failed to get profiles'
+        });
+        return;
+      }
       
       // Получаем статус браузеров для каждого профиля
       const profilesWithStatus = await Promise.all(
-        profiles.map(async (profile) => {
-          const browserStatus = await adsPowerService.getBrowserStatus(profile.user_id);
+        profilesResult.data.map(async (profile) => {
+          const browserStatus = await adsPowerService.getBrowserStatus(profile.profileId);
           return {
             ...profile,
-            browserStatus
+            browserStatus: browserStatus.success ? browserStatus.status : 'unknown'
           };
         })
       );
 
       res.json({
         success: true,
-        data: {
-          profiles: profilesWithStatus,
-          count: profiles.length
-        }
+        data: profilesWithStatus,
+        total: profilesResult.data.length
       });
     } catch (error: any) {
       logger.error('Failed to get profiles:', error);

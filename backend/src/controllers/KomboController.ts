@@ -341,11 +341,12 @@ export class KomboController {
       const files = req.files as any[];
       
       if (!files || files.length === 0) {
-        return res.status(400).json({ 
+        res.status(400).json({ 
           success: false,
           error: 'Нет файлов для загрузки',
           code: 'NO_FILES_PROVIDED'
         });
+        return;
       }
 
       // Создаем директорию если не существует
@@ -428,12 +429,13 @@ export class KomboController {
           message: detail.message
         }));
         
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'Ошибка валидации данных',
           validationErrors,
           code: 'VALIDATION_FAILED'
         });
+        return;
       }
 
       const { login, password, profileName, maxPostsPerDay, dropboxFolder } = value;
@@ -504,8 +506,7 @@ export class KomboController {
           const result = await RetryManager.retry(async () => {
             return await adsPowerService.createInstagramProfile({
               login: account.username,
-              password: account.decryptPassword(),
-              profileName: account.displayName || account.username
+              name: account.displayName || account.username
             });
           }, 2, 3000);
 
@@ -591,12 +592,13 @@ export class KomboController {
       }).validate(req.body);
       
       if (error) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'Некорректные данные',
           details: error.details.map(d => d.message),
           code: 'VALIDATION_FAILED'
         });
+        return;
       }
 
       const { instagramData, settings } = value;
@@ -613,12 +615,13 @@ export class KomboController {
       });
 
       if (!account) {
-        return res.status(404).json({ 
+        res.status(404).json({ 
           success: false,
           error: 'Instagram аккаунт не найден в базе данных',
           message: 'Сначала сохраните данные Instagram аккаунта',
           code: 'ACCOUNT_NOT_FOUND'
         });
+        return;
       }
 
       const adsPowerService = new AdsPowerService();
@@ -645,8 +648,7 @@ export class KomboController {
         const result = await RetryManager.retry(async () => {
           return await adsPowerService.createInstagramProfile({
             login: account.username,
-            password: account.decryptPassword(),
-            profileName: account.displayName
+            name: account.displayName
           });
         }, 2, 5000);
 
@@ -751,12 +753,13 @@ export class KomboController {
       }).validate(req.body);
       
       if (error) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'Некорректные данные для запуска автоматизации',
           details: error.details.map(d => d.message),
           code: 'VALIDATION_FAILED'
         });
+        return;
       }
 
       const { instagramData, mediaFiles, settings } = value;
@@ -768,21 +771,23 @@ export class KomboController {
       });
 
       if (!account) {
-        return res.status(404).json({ 
+        res.status(404).json({ 
           success: false,
           error: 'Instagram аккаунт не найден',
           message: 'Сначала создайте и настройте Instagram аккаунт',
           code: 'ACCOUNT_NOT_FOUND'
         });
+        return;
       }
 
       if (!account.adsPowerProfileId || account.adsPowerStatus !== 'created') {
-        return res.status(400).json({ 
+        res.status(400).json({ 
           success: false,
           error: 'AdsPower профиль не создан',
           message: 'Сначала создайте AdsPower профиль для этого аккаунта',
           code: 'ADSPOWER_PROFILE_REQUIRED'
         });
+        return;
       }
 
       // Готовим конфигурацию для Pupiter
@@ -1232,11 +1237,12 @@ export class KomboController {
       }).validate(req.query);
       
       if (error) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'Некорректные параметры запроса',
           details: error.details.map(d => d.message)
         });
+        return;
       }
 
       const { page, limit, status, sortBy, sortOrder } = value;

@@ -56,13 +56,13 @@ export class InstagramService {
       logger.info(`Attempting Instagram login for: ${username}`);
 
       // Проверяем доступность WebSocket endpoint
-      if (!session.ws.puppeteer) {
+      if (!session.ws) {
         throw new Error('No Puppeteer WebSocket endpoint provided in session');
       }
 
       // Подключаемся к браузеру AdsPower
       browser = await puppeteer.connect({
-        browserWSEndpoint: session.ws.puppeteer,
+        browserWSEndpoint: session.ws,
         defaultViewport: null
       });
 
@@ -219,8 +219,9 @@ export class InstagramService {
         throw new Error(`Video file too large: ${this.formatFileSize(stats.size)} (max 100MB)`);
       }
 
+      // Подключаемся к браузеру AdsPower
       browser = await puppeteer.connect({
-        browserWSEndpoint: session.ws.puppeteer,
+        browserWSEndpoint: session.ws,
         defaultViewport: null
       });
 
@@ -376,8 +377,9 @@ export class InstagramService {
     let page: Page | null = null;
 
     try {
+      // Подключаемся к браузеру AdsPower
       browser = await puppeteer.connect({
-        browserWSEndpoint: session.ws.puppeteer,
+        browserWSEndpoint: session.ws,
         defaultViewport: null
       });
 
@@ -438,8 +440,9 @@ export class InstagramService {
         return false;
       }
 
+      // Подключаемся к браузеру AdsPower
       browser = await puppeteer.connect({
-        browserWSEndpoint: session.ws.puppeteer,
+        browserWSEndpoint: session.ws,
         defaultViewport: null
       });
 

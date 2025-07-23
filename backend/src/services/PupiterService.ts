@@ -420,8 +420,7 @@ export class PupiterService extends EventEmitter {
       const result = await RetrySystem.executeWithRetry(async () => {
         return await this.adsPowerService.createInstagramProfile({
           login: this.config!.instagramLogin,
-          password: this.config!.instagramPassword,
-          profileName: this.config!.profileName
+          name: this.config!.profileName
         });
       }, 2, 3000, 2, (attempt, error) => {
         this.log(`Попытка ${attempt} создания AdsPower профиля: ${error.message}`, 'warning');
@@ -435,15 +434,19 @@ export class PupiterService extends EventEmitter {
       this.updateStatus('🚀 Запуск AdsPower профиля...', 35);
       
       // Запускаем профиль с retry логикой
-      const session = await RetrySystem.executeWithRetry(async () => {
-        return await this.adsPowerService.startProfile(result.profileId);
+      const sessionResult = await RetrySystem.executeWithRetry(async () => {
+        return await this.adsPowerService.startBrowser(result.profileId);
       }, 3, 2000, 2, (attempt, error) => {
         this.log(`Попытка ${attempt} запуска AdsPower профиля: ${error.message}`, 'warning');
       });
       
-      this.currentSession = session;
+      if (!sessionResult.success || !sessionResult.data) {
+        throw new Error(sessionResult.error || 'Failed to start browser session');
+      }
+      
+      this.currentSession = sessionResult.data;
       this.status.adsPowerStatus = 'running';
-      this.stateManager.setState('browserSession', session);
+      this.stateManager.setState('browserSession', sessionResult.data);
       
       this.log('🚀 AdsPower профиль запущен и готов к работе', 'success');
       this.updateStatus('✅ AdsPower профиль активен', 45);
@@ -826,14 +829,14 @@ export class PupiterService extends EventEmitter {
       // Проверяем состояние AdsPower профиля
       if (this.status.adsPowerProfileId) {
         try {
-          const profileStatus = await this.adsPowerService.checkProfileStatus(this.status.adsPowerProfileId);
-          if (!profileStatus.isActive && this.status.adsPowerStatus === 'running') {
+          const profileStatus = await this.adsPowerService.getProfileStatus(this.status.adsPowerProfileId);
+          if (!profileStatus.success || profileStatus.status !== 'running') {
             healthIssues.push('AdsPower профиль неактивен');
             healthScore -= 30;
             await this.recoverAdsPowerSession();
           }
         } catch (error: any) {
-          healthIssues.push(`Ошибка проверки AdsPower: ${error.message}`);
+          healthIssues.push(`Ошибка проверки AdsPower профиля: ${error.message}`);
           healthScore -= 20;
         }
       }
@@ -923,15 +926,19 @@ export class PupiterService extends EventEmitter {
       await this.sleep(3000);
       
       // Запускаем заново
-      const session = await RetrySystem.executeWithRetry(
-        () => this.adsPowerService.startProfile(this.status.adsPowerProfileId!),
+      const sessionResult = await RetrySystem.executeWithRetry(
+        () => this.adsPowerService.startBrowser(this.status.adsPowerProfileId!),
         3,
         3000
       );
       
-      this.currentSession = session;
+      if (!sessionResult.success || !sessionResult.data) {
+        throw new Error(sessionResult.error || 'Failed to start browser session');
+      }
+      
+      this.currentSession = sessionResult.data;
       this.status.adsPowerStatus = 'running';
-      this.stateManager.setState('browserSession', session);
+      this.stateManager.setState('browserSession', sessionResult.data);
       
       this.log('✅ AdsPower сессия успешно восстановлена', 'success');
       this.emit('adspower_recovered');
@@ -1196,8 +1203,8 @@ export class PupiterService extends EventEmitter {
     
     // Дополнительные проверки здоровья сессии
     try {
-      const profileStatus = await this.adsPowerService.checkProfileStatus(this.status.adsPowerProfileId!);
-      if (!profileStatus.isActive) {
+      const profileStatus = await this.adsPowerService.getProfileStatus(this.status.adsPowerProfileId!);
+      if (!profileStatus.success || profileStatus.status !== 'running') {
         throw new Error('AdsPower профиль неактивен');
       }
     } catch (error: any) {
