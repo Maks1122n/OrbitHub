@@ -748,7 +748,7 @@ export class DropboxService {
       const usage = response.result;
       logger.debug('Dropbox usage info retrieved', {
         used: this.formatFileSize(usage.used),
-        allocated: usage.allocation ? this.formatFileSize(usage.allocation.allocated) : 'unlimited'
+        allocated: usage.allocation ? this.formatFileSize((usage.allocation as any).allocated || 0) : 'unlimited'
       });
       
       return usage;

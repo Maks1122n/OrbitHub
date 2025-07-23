@@ -763,9 +763,7 @@ export class PupiterService extends EventEmitter {
           videoPath,
           this.generateSmartCaption(),
           {
-            hashtags: this.generateRelevantHashtags(),
-            waitForUpload: true,
-            retryOnError: true
+            hashtags: this.generateRelevantHashtags()
           }
         );
       }, 2, 10000, 2, (attempt, error) => {

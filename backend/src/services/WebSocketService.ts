@@ -145,7 +145,7 @@ export class WebSocketService {
        * Отключение от обновлений
        */
       socket.on('unsubscribe:all', () => {
-        socket.leaveAll();
+        // socket.leaveAll(); // Убираем приватный метод
         logger.debug(`🔄 User ${userId} unsubscribed from all updates`);
       });
 
