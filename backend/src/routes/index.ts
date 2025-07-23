@@ -2,7 +2,7 @@ import express from 'express';
 import authRoutes from './auth';
 import accountRoutes from './accounts';
 import dashboardRoutes from './dashboard';
-import automationRoutes from './automation';
+// import automationRoutes from './automation'; // Временно отключено
 import komboRoutes from './kombo';
 
 const router = express.Router();
@@ -11,7 +11,7 @@ const router = express.Router();
 router.use('/auth', authRoutes);
 router.use('/accounts', accountRoutes);
 router.use('/dashboard', dashboardRoutes);
-router.use('/automation', automationRoutes);
+// router.use('/automation', automationRoutes); // Временно отключено
 router.use('/kombo', komboRoutes);
 
 // Здоровье API

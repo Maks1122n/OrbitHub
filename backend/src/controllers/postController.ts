@@ -6,7 +6,7 @@ import logger from '../utils/logger';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { AutomationService } from '../services/AutomationService.production';
+import { AutomationService } from '../services/AutomationService.simple-render';
 
 // Настройка multer для загрузки файлов
 const storage = multer.diskStorage({
