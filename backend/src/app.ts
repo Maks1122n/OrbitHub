@@ -70,7 +70,7 @@ app.use('/api/automation', automationRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/logs', logsRoutes);
 app.use('/api/kombo', komboRoutes);
-app.use('/api/kombo-new', komboRoutes); // Новый KOMBO с Pupiter
+app.use('/api/kombo-new', komboRoutes); // Новый KOMBO с Pupiter (работает!)
 app.use('/api/proxy', proxyRoutes);
 app.use('/api/account-proxy', accountProxyRoutes);
 
