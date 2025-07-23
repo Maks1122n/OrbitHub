@@ -354,10 +354,25 @@ accountSchema.pre('save', function(next) {
   next();
 });
 
-// Индексы для быстрого поиска
-accountSchema.index({ username: 1 });
+// Индексы для оптимизации поиска
+accountSchema.index({ email: 1 });
+accountSchema.index({ username: 1 }, { unique: true });
 accountSchema.index({ status: 1 });
-accountSchema.index({ isRunning: 1 });
 accountSchema.index({ createdBy: 1 });
+accountSchema.index({ isRunning: 1 });
+accountSchema.index({ lastActivity: -1 }); // Для сортировки по последней активности
+accountSchema.index({ adsPowerProfileId: 1 }, { sparse: true }); // sparse для необязательных полей
+accountSchema.index({ proxyId: 1 }, { sparse: true });
+
+// Составные индексы для часто используемых запросов
+accountSchema.index({ createdBy: 1, status: 1 }); // Аккаунты пользователя по статусу
+accountSchema.index({ status: 1, isRunning: 1 }); // Активные работающие аккаунты
+accountSchema.index({ adsPowerStatus: 1, adsPowerProfileId: 1 }, { sparse: true }); // AdsPower интеграция
+
+// TTL индекс для очистки ошибок (удаляем старые ошибки через 30 дней)
+accountSchema.index({ 'stats.lastError': 1 }, { 
+  expireAfterSeconds: 30 * 24 * 60 * 60, // 30 дней
+  sparse: true 
+});
 
 export const Account = model<IAccount>('Account', accountSchema); 

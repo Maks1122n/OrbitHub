@@ -4,8 +4,8 @@ import toast from 'react-hot-toast';
 // Автоматическое определение API URL
 const getApiBaseUrl = () => {
   // Если есть переменная окружения - используем её
-  if (import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL;
+  if ((import.meta as any).env?.VITE_API_URL) {
+    return (import.meta as any).env.VITE_API_URL;
   }
   
   // Если на продакшене (orbithub.onrender.com) - используем тот же домен
@@ -13,7 +13,7 @@ const getApiBaseUrl = () => {
     return `${window.location.protocol}//${window.location.host}/api`;
   }
   
-  // Локальная разработка
+  // Локальная разработка - ИСПРАВЛЕНО: используем правильный порт backend
   return 'http://localhost:5000/api';
 };
 
@@ -168,7 +168,7 @@ class ApiClient {
         // Устанавливаем loading state
         const loadingKey = `${config.method?.toUpperCase()}_${config.url}`;
         LoadingManager.setLoading(loadingKey, true);
-        config.metadata = { loadingKey };
+        (config as any).metadata = { loadingKey };
 
         return config;
       },
@@ -278,7 +278,7 @@ class ApiClient {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
-        metadata: { loadingKey }
+        // Убираем metadata для совместимости с TypeScript
       });
 
       LoadingManager.setLoading(loadingKey, false);

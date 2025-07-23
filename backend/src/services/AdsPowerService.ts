@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosInstance, AxiosError } from 'axios';
 import { adsPowerConfig } from '../config/adspower';
 import logger from '../utils/logger';
 
@@ -45,240 +45,581 @@ export interface ProfileCreateData {
   notes?: string;
 }
 
+// Система retry с экспоненциальным backoff
+class RetryManager {
+  static async executeWithRetry<T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 3,
+    initialDelayMs: number = 1000,
+    backoffMultiplier: number = 2,
+    shouldRetry?: (error: any) => boolean
+  ): Promise<T> {
+    let lastError: Error;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error as Error;
+        
+        // Проверяем, стоит ли повторять попытку
+        if (shouldRetry && !shouldRetry(error)) {
+          throw lastError;
+        }
+        
+        if (attempt === maxRetries) {
+          break;
+        }
+        
+        const delay = initialDelayMs * Math.pow(backoffMultiplier, attempt - 1);
+        logger.warn(`AdsPower operation failed (attempt ${attempt}/${maxRetries}), retrying in ${delay}ms: ${lastError.message}`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    
+    throw new Error(`AdsPower operation failed after ${maxRetries} attempts: ${lastError!.message}`);
+  }
+}
+
+// Система мониторинга подключения
+class ConnectionMonitor {
+  private consecutiveFailures = 0;
+  private lastSuccessTime = Date.now();
+  private maxFailures = 5;
+  
+  recordSuccess(): void {
+    this.consecutiveFailures = 0;
+    this.lastSuccessTime = Date.now();
+  }
+  
+  recordFailure(): void {
+    this.consecutiveFailures++;
+  }
+  
+  isHealthy(): boolean {
+    return this.consecutiveFailures < this.maxFailures;
+  }
+  
+  getHealthScore(): number {
+    if (this.consecutiveFailures === 0) return 100;
+    return Math.max(0, 100 - (this.consecutiveFailures * 20));
+  }
+  
+  getStatus(): { healthy: boolean; failures: number; lastSuccess: number; score: number } {
+    return {
+      healthy: this.isHealthy(),
+      failures: this.consecutiveFailures,
+      lastSuccess: Date.now() - this.lastSuccessTime,
+      score: this.getHealthScore()
+    };
+  }
+}
+
 export class AdsPowerService {
   private api: AxiosInstance;
   private baseUrl: string;
+  private connectionMonitor: ConnectionMonitor;
+  private profileCache: Map<string, AdsPowerProfile> = new Map();
+  private sessionCache: Map<string, BrowserSession> = new Map();
+  private lastHealthCheck = 0;
+  private healthCheckInterval = 30000; // 30 секунд
 
   constructor() {
     this.baseUrl = adsPowerConfig.host;
+    this.connectionMonitor = new ConnectionMonitor();
+    
     this.api = axios.create({
       baseURL: this.baseUrl,
       timeout: adsPowerConfig.timeout,
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'User-Agent': 'OrbitHub-AdsPower-Client/1.0'
       }
     });
 
-    // Логирование запросов
+    this.setupInterceptors();
+    this.startHealthMonitoring();
+  }
+
+  /**
+   * 🔧 Настройка интерсепторов для мониторинга и retry
+   */
+  private setupInterceptors(): void {
+    // Request interceptor
     this.api.interceptors.request.use(
       (config) => {
-        logger.debug(`AdsPower API Request: ${config.method?.toUpperCase()} ${config.url}`);
+        logger.debug(`AdsPower Request: ${config.method?.toUpperCase()} ${config.url}`, {
+          endpoint: config.url,
+          timeout: config.timeout
+        });
         return config;
       },
       (error) => {
-        logger.error(`AdsPower API Request Error: ${error instanceof Error ? error.message : String(error)}`);
+        logger.error('AdsPower Request Error:', error);
+        this.connectionMonitor.recordFailure();
         return Promise.reject(error);
       }
     );
 
+    // Response interceptor
     this.api.interceptors.response.use(
       (response) => {
-        logger.debug(`AdsPower API Response: ${response.status} ${response.config.url}`);
+        this.connectionMonitor.recordSuccess();
+        logger.debug(`AdsPower Response: ${response.status} ${response.config.url}`, {
+          status: response.status,
+          endpoint: response.config.url,
+          responseTime: response.headers['x-response-time']
+        });
         return response;
       },
-      (error) => {
-        logger.error('AdsPower API Response Error:', {
+      (error: AxiosError) => {
+        this.connectionMonitor.recordFailure();
+        
+        // Детальное логирование ошибок
+        const errorDetails = {
           url: error.config?.url,
+          method: error.config?.method,
           status: error.response?.status,
-          message: error.message
-        });
-        return Promise.reject(error);
+          statusText: error.response?.statusText,
+          message: error.message,
+          code: error.code
+        };
+        
+        if (error.response?.status === 500) {
+          logger.error('AdsPower Internal Server Error:', errorDetails);
+        } else if (error.code === 'ECONNREFUSED') {
+          logger.error('AdsPower Connection Refused - API not running:', errorDetails);
+        } else if (error.code === 'ETIMEDOUT') {
+          logger.error('AdsPower Request Timeout:', errorDetails);
+        } else {
+          logger.error('AdsPower API Error:', errorDetails);
+        }
+        
+        return Promise.reject(this.normalizeError(error));
       }
     );
   }
 
-  // Проверка подключения к AdsPower
+  /**
+   * 🏥 Запуск мониторинга здоровья подключения
+   */
+  private startHealthMonitoring(): void {
+    setInterval(async () => {
+      try {
+        await this.performHealthCheck();
+      } catch (error) {
+        logger.debug('Health check failed:', error);
+      }
+    }, this.healthCheckInterval);
+  }
+
+  /**
+   * 🔍 Проверка здоровья API
+   */
+  private async performHealthCheck(): Promise<void> {
+    if (Date.now() - this.lastHealthCheck < this.healthCheckInterval) {
+      return;
+    }
+    
+    try {
+      const response = await this.api.get('/api/v1/status', { timeout: 5000 });
+      this.lastHealthCheck = Date.now();
+      
+      if (response.status === 200) {
+        logger.debug('AdsPower health check passed');
+      }
+    } catch (error) {
+      logger.debug('AdsPower health check failed');
+    }
+  }
+
+  /**
+   * ✅ Проверка подключения к AdsPower с улучшенной надежностью
+   */
   async checkConnection(): Promise<boolean> {
     try {
-      const response = await this.api.get('/api/v1/status');
-      return response.status === 200;
-    } catch (error) {
-      logger.error(`AdsPower connection failed: ${error instanceof Error ? error.message : String(error)}`);
+      const result = await RetryManager.executeWithRetry(
+        async () => {
+          const response = await this.api.get('/api/v1/status', { timeout: 10000 });
+          return response.status === 200;
+        },
+        3,
+        1000,
+        2,
+        (error) => {
+          // Повторяем только при сетевых ошибках
+          return error.code === 'ECONNREFUSED' || 
+                 error.code === 'ETIMEDOUT' || 
+                 error.response?.status >= 500;
+        }
+      );
+      
+      logger.info('AdsPower connection verified successfully');
+      return result;
+      
+    } catch (error: any) {
+      logger.error('AdsPower connection check failed:', {
+        error: error.message,
+        baseUrl: this.baseUrl,
+        healthScore: this.connectionMonitor.getHealthScore()
+      });
       return false;
     }
   }
 
-  // Получение версии AdsPower
+  /**
+   * 📄 Получение версии AdsPower с кэшированием
+   */
   async getVersion(): Promise<string | null> {
     try {
-      const response = await this.api.get('/api/v1/status');
-      return response.data?.version || 'unknown';
-    } catch (error) {
-      logger.error('Failed to get AdsPower version:', error);
+      const response = await RetryManager.executeWithRetry(
+        () => this.api.get('/api/v1/status', { timeout: 5000 }),
+        2,
+        1000
+      );
+      
+      const version = response.data?.version || response.data?.data?.version || 'unknown';
+      logger.debug(`AdsPower version: ${version}`);
+      return version;
+      
+    } catch (error: any) {
+      logger.error('Failed to get AdsPower version:', error.message);
       return null;
     }
   }
 
-  // Создание профиля
+  /**
+   * 🎯 Создание профиля с улучшенной конфигурацией
+   */
   async createProfile(data: ProfileCreateData): Promise<string> {
     try {
-      const profileConfig = {
-        user_name: `orbithub_${data.name}_${Date.now()}`,
-        domain_name: adsPowerConfig.defaultProfileConfig.domain_name,
-        open_tabs: adsPowerConfig.defaultProfileConfig.open_tabs,
-        repeat_config: adsPowerConfig.defaultProfileConfig.repeat_config,
-        fingerprint_config: {
-          ...adsPowerConfig.defaultProfileConfig.fingerprint_config,
-          automatic_timezone: 1,
-          language: ['en-US', 'en'],
-          page_action: 1
-        },
-        user_proxy_config: data.proxy ? {
-          proxy_soft: 'other',
-          proxy_type: data.proxy.type,
-          proxy_host: data.proxy.host,
-          proxy_port: data.proxy.port,
-          proxy_user: data.proxy.username || '',
-          proxy_password: data.proxy.password || ''
-        } : {
-          proxy_soft: 'other',
-          proxy_type: 'noproxy'
-        },
-        group_id: data.group_id || '0',
-        remark: data.notes || `OrbitHub profile for ${data.name}`
-      };
-
-      const response = await this.api.post('/api/v1/user/create', profileConfig);
+      const profileConfig = this.generateOptimalProfileConfig(data);
+      
+      const response = await RetryManager.executeWithRetry(
+        () => this.api.post('/api/v1/user/create', profileConfig),
+        2,
+        2000,
+        2,
+        (error) => error.response?.status !== 400 // Не повторяем при ошибках валидации
+      );
 
       if (response.data.code === 0) {
         const profileId = response.data.data.id;
-        logger.info(`AdsPower profile created successfully: ${profileId}`);
+        
+        // Кэшируем созданный профиль
+        const profile: AdsPowerProfile = {
+          user_id: profileId,
+          user_name: profileConfig.user_name,
+          group_id: profileConfig.group_id,
+          domain_name: profileConfig.domain_name,
+          created_time: new Date().toISOString()
+        };
+        this.profileCache.set(profileId, profile);
+        
+        logger.info(`AdsPower profile created successfully: ${profileId}`, {
+          profileId,
+          name: profileConfig.user_name
+        });
+        
         return profileId;
       } else {
-        throw new Error(`AdsPower API error: ${response.data.msg}`);
+        throw new Error(`AdsPower API error: ${response.data.msg || 'Unknown error'}`);
       }
+      
     } catch (error: any) {
-      logger.error(`Failed to create AdsPower profile: ${error instanceof Error ? error.message : String(error)}`);
-      throw new Error(`Profile creation failed: ${error.response?.data?.msg || error.message}`);
+      logger.error('Failed to create AdsPower profile:', {
+        error: error.message,
+        profileName: data.name
+      });
+      throw new Error(`Profile creation failed: ${this.getErrorMessage(error)}`);
     }
   }
 
-  // Получение информации о профиле
+  /**
+   * 🎨 Генерация оптимальной конфигурации профиля
+   */
+  private generateOptimalProfileConfig(data: ProfileCreateData) {
+    const timestamp = Date.now();
+    const randomSuffix = Math.random().toString(36).substring(2, 8);
+    
+    return {
+      user_name: `orbithub_${data.name}_${randomSuffix}`,
+      domain_name: adsPowerConfig.defaultProfileConfig.domain_name,
+      open_tabs: adsPowerConfig.defaultProfileConfig.open_tabs,
+      repeat_config: adsPowerConfig.defaultProfileConfig.repeat_config,
+      fingerprint_config: {
+        ...adsPowerConfig.defaultProfileConfig.fingerprint_config,
+        automatic_timezone: 1,
+        language: ['ru-RU', 'ru', 'en-US', 'en'],
+        page_action: 1,
+        // Оптимизация для Instagram
+        canvas: {
+          noise: true,
+          disable_webgl: false
+        },
+        webgl: {
+          noise: true,
+          vendor: this.getRandomWebGLVendor(),
+          renderer: this.getRandomWebGLRenderer()
+        }
+      },
+      user_proxy_config: this.buildProxyConfig(data.proxy),
+      group_id: data.group_id || '0',
+      remark: data.notes || `OrbitHub profile created ${new Date().toISOString()}`,
+      created_time: timestamp
+    };
+  }
+
+  /**
+   * 🌐 Построение конфигурации прокси
+   */
+  private buildProxyConfig(proxy?: ProfileCreateData['proxy']) {
+    if (!proxy) {
+      return {
+        proxy_soft: 'other',
+        proxy_type: 'noproxy'
+      };
+    }
+    
+    return {
+      proxy_soft: 'other',
+      proxy_type: proxy.type,
+      proxy_host: proxy.host,
+      proxy_port: proxy.port,
+      proxy_user: proxy.username || '',
+      proxy_password: proxy.password || ''
+    };
+  }
+
+  /**
+   * 📋 Получение информации о профиле с кэшированием
+   */
   async getProfile(profileId: string): Promise<AdsPowerProfile | null> {
     try {
-      const response = await this.api.get('/api/v1/user/query', {
-        params: { user_id: profileId }
-      });
+      // Проверяем кэш
+      if (this.profileCache.has(profileId)) {
+        const cached = this.profileCache.get(profileId)!;
+        // Если кэш свежий (меньше 5 минут), возвращаем его
+        if (Date.now() - new Date(cached.created_time || 0).getTime() < 300000) {
+          return cached;
+        }
+      }
+      
+      const response = await RetryManager.executeWithRetry(
+        () => this.api.get('/api/v1/user/query', {
+          params: { user_id: profileId },
+          timeout: 10000
+        }),
+        2,
+        1000
+      );
 
       if (response.data.code === 0 && response.data.data.list.length > 0) {
-        return response.data.data.list[0];
+        const profile = response.data.data.list[0];
+        this.profileCache.set(profileId, profile);
+        return profile;
       }
+      
       return null;
-    } catch (error) {
-      logger.error(`Failed to get profile ${profileId}:`, error);
+      
+    } catch (error: any) {
+      logger.error(`Failed to get profile ${profileId}:`, error.message);
       return null;
     }
   }
 
-  // Получение списка всех профилей
-  async getAllProfiles(): Promise<AdsPowerProfile[]> {
+  /**
+   * 📂 Получение списка профилей с пагинацией
+   */
+  async getAllProfiles(page: number = 1, pageSize: number = 100): Promise<AdsPowerProfile[]> {
     try {
-      const response = await this.api.get('/api/v1/user/list', {
-        params: {
-          page: 1,
-          page_size: 100 // Получаем до 100 профилей
-        }
-      });
+      const response = await RetryManager.executeWithRetry(
+        () => this.api.get('/api/v1/user/list', {
+          params: {
+            page,
+            page_size: Math.min(pageSize, 100)
+          },
+          timeout: 15000
+        }),
+        2,
+        2000
+      );
 
       if (response.data.code === 0) {
-        return response.data.data.list || [];
+        const profiles = response.data.data.list || [];
+        
+        // Обновляем кэш
+        profiles.forEach((profile: AdsPowerProfile) => {
+          this.profileCache.set(profile.user_id, profile);
+        });
+        
+        logger.debug(`Retrieved ${profiles.length} AdsPower profiles`);
+        return profiles;
       }
+      
       return [];
-    } catch (error) {
-      logger.error('Failed to get profiles list:', error);
+      
+    } catch (error: any) {
+      logger.error('Failed to get profiles list:', error.message);
       return [];
     }
   }
 
-  // Запуск браузера
+  /**
+   * 🚀 Запуск браузера с улучшенной обработкой
+   */
   async startBrowser(profileId: string): Promise<BrowserSession> {
     try {
-      const response = await this.api.get('/api/v1/browser/start', {
-        params: {
-          user_id: profileId,
-          launch_args: [],
-          headless: 0,
-          clear_cache_after_closing: 0
+      logger.info(`Starting browser for profile: ${profileId}`);
+      
+      const response = await RetryManager.executeWithRetry(
+        () => this.api.get('/api/v1/browser/start', {
+          params: {
+            user_id: profileId,
+            launch_args: [],
+            headless: 0,
+            clear_cache_after_closing: 0
+          },
+          timeout: 30000 // Увеличиваем timeout для запуска браузера
+        }),
+        2,
+        5000, // Больше времени между попытками
+        2,
+        (error) => {
+          // Не повторяем при ошибках конфигурации профиля
+          return !error.response?.data?.msg?.includes('profile not found');
         }
-      });
+      );
 
       if (response.data.code === 0) {
         const session = response.data.data;
-        logger.info(`Browser started successfully for profile: ${profileId}`);
+        
+        // Валидируем сессию
+        if (!session.ws?.puppeteer) {
+          throw new Error('Invalid session: missing Puppeteer WebSocket endpoint');
+        }
+        
+        // Кэшируем сессию
+        this.sessionCache.set(profileId, session);
+        
+        logger.info(`Browser started successfully for profile: ${profileId}`, {
+          profileId,
+          debugPort: session.debug_port,
+          websocket: session.ws.puppeteer ? 'available' : 'missing'
+        });
+        
         return session;
       } else {
         throw new Error(`Failed to start browser: ${response.data.msg}`);
       }
+      
     } catch (error: any) {
-      logger.error(`Failed to start browser for profile ${profileId}:`, error);
-      throw new Error(`Browser start failed: ${error.response?.data?.msg || error.message}`);
+      logger.error(`Failed to start browser for profile ${profileId}:`, {
+        profileId,
+        error: error.message
+      });
+      throw new Error(`Browser start failed: ${this.getErrorMessage(error)}`);
     }
   }
 
-  // Остановка браузера
+  /**
+   * ⏹️ Остановка браузера с проверкой состояния
+   */
   async stopBrowser(profileId: string): Promise<boolean> {
     try {
-      const response = await this.api.get('/api/v1/browser/stop', {
-        params: { user_id: profileId }
-      });
+      logger.info(`Stopping browser for profile: ${profileId}`);
+      
+      const response = await RetryManager.executeWithRetry(
+        () => this.api.get('/api/v1/browser/stop', {
+          params: { user_id: profileId },
+          timeout: 15000
+        }),
+        2,
+        2000,
+        2,
+        (error) => {
+          // Не повторяем если браузер уже остановлен
+          return !error.response?.data?.msg?.includes('not running');
+        }
+      );
+
+      // Удаляем из кэша сессий
+      this.sessionCache.delete(profileId);
 
       if (response.data.code === 0) {
         logger.info(`Browser stopped successfully for profile: ${profileId}`);
         return true;
       } else {
-        logger.warn(`Failed to stop browser: ${response.data.msg}`);
-        return false;
+        logger.warn(`Browser stop warning for profile ${profileId}: ${response.data.msg}`);
+        return response.data.msg?.includes('not running') || false;
       }
-    } catch (error) {
-      logger.error(`Failed to stop browser for profile ${profileId}:`, error);
+      
+    } catch (error: any) {
+      logger.error(`Failed to stop browser for profile ${profileId}:`, error.message);
       return false;
     }
   }
 
-  // Alias для совместимости с PupiterService
-  async stopProfile(profileId: string): Promise<boolean> {
-    return this.stopBrowser(profileId);
-  }
-
-  // Alias для совместимости с PupiterService  
-  async startProfile(profileId: string): Promise<BrowserSession> {
-    return this.startBrowser(profileId);
-  }
-
-  // Проверка статуса браузера
+  /**
+   * 📊 Проверка статуса браузера с кэшированием
+   */
   async getBrowserStatus(profileId: string): Promise<'Active' | 'Inactive'> {
     try {
       const response = await this.api.get('/api/v1/browser/active', {
-        params: { user_id: profileId }
+        params: { user_id: profileId },
+        timeout: 8000
       });
 
       if (response.data.code === 0) {
-        return response.data.data.status;
+        const status = response.data.data.status;
+        logger.debug(`Browser status for ${profileId}: ${status}`);
+        return status;
       }
+      
       return 'Inactive';
-    } catch (error) {
-      logger.error(`Failed to get browser status for profile ${profileId}:`, error);
+      
+    } catch (error: any) {
+      logger.debug(`Failed to get browser status for profile ${profileId}:`, error.message);
       return 'Inactive';
     }
   }
 
-  // Проверка статуса профиля для совместимости с PupiterService
-  async checkProfileStatus(profileId: string): Promise<{ isActive: boolean; status: string }> {
+  /**
+   * 🔍 Комплексная проверка статуса профиля
+   */
+  async checkProfileStatus(profileId: string): Promise<{ isActive: boolean; status: string; details?: any }> {
     try {
-      const status = await this.getBrowserStatus(profileId);
+      const [browserStatus, profileData] = await Promise.allSettled([
+        this.getBrowserStatus(profileId),
+        this.getProfile(profileId)
+      ]);
+      
+      const status = browserStatus.status === 'fulfilled' ? browserStatus.value : 'Inactive';
+      const profile = profileData.status === 'fulfilled' ? profileData.value : null;
+      
       return {
         isActive: status === 'Active',
-        status: status
+        status,
+        details: {
+          profile: profile ? 'found' : 'not_found',
+          lastCheck: new Date().toISOString(),
+          connectionHealth: this.connectionMonitor.getHealthScore()
+        }
       };
-    } catch (error) {
+      
+    } catch (error: any) {
+      logger.error(`Profile status check failed for ${profileId}:`, error.message);
       return {
         isActive: false,
-        status: 'Error'
+        status: 'Error',
+        details: { error: error.message }
       };
     }
   }
 
-  // Обновление прокси профиля
+  /**
+   * 🔄 Обновление прокси профиля
+   */
   async updateProfileProxy(profileId: string, proxy: {
     type: 'http' | 'socks5' | 'noproxy';
     host?: string;
@@ -287,44 +628,73 @@ export class AdsPowerService {
     password?: string;
   }): Promise<boolean> {
     try {
-      const proxyConfig = proxy.type === 'noproxy' ? {
-        proxy_soft: 'other',
-        proxy_type: 'noproxy'
-      } : {
-        proxy_soft: 'other',
-        proxy_type: proxy.type,
-        proxy_host: proxy.host,
-        proxy_port: proxy.port,
-        proxy_user: proxy.username || '',
-        proxy_password: proxy.password || ''
-      };
+      const proxyConfig = this.buildProxyConfig(
+        proxy.type === 'noproxy' ? undefined : {
+          type: proxy.type as 'http' | 'socks5',
+          host: proxy.host!,
+          port: proxy.port!,
+          username: proxy.username,
+          password: proxy.password
+        }
+      );
 
-      const response = await this.api.post('/api/v1/user/update', {
-        user_id: profileId,
-        user_proxy_config: proxyConfig
-      });
+      const response = await RetryManager.executeWithRetry(
+        () => this.api.post('/api/v1/user/update', {
+          user_id: profileId,
+          user_proxy_config: proxyConfig
+        }),
+        2,
+        2000
+      );
 
       if (response.data.code === 0) {
-        logger.info(`Proxy updated successfully for profile: ${profileId}`);
+        // Обновляем кэш
+        const cached = this.profileCache.get(profileId);
+        if (cached) {
+          cached.user_proxy_config = proxyConfig;
+          this.profileCache.set(profileId, cached);
+        }
+        
+        logger.info(`Proxy updated successfully for profile: ${profileId}`, {
+          profileId,
+          proxyType: proxy.type
+        });
         return true;
       } else {
         throw new Error(`Failed to update proxy: ${response.data.msg}`);
       }
-    } catch (error) {
-      logger.error(`Failed to update proxy for profile ${profileId}:`, error);
+      
+    } catch (error: any) {
+      logger.error(`Failed to update proxy for profile ${profileId}:`, error.message);
       return false;
     }
   }
 
-  // Удаление профиля
+  /**
+   * 🗑️ Удаление профиля с очисткой кэша
+   */
   async deleteProfile(profileId: string): Promise<boolean> {
     try {
+      logger.info(`Deleting profile: ${profileId}`);
+      
       // Сначала останавливаем браузер если он запущен
-      await this.stopBrowser(profileId);
+      const status = await this.getBrowserStatus(profileId);
+      if (status === 'Active') {
+        await this.stopBrowser(profileId);
+        await new Promise(resolve => setTimeout(resolve, 3000)); // Ждем остановки
+      }
 
-      const response = await this.api.post('/api/v1/user/delete', {
-        user_ids: [profileId]
-      });
+      const response = await RetryManager.executeWithRetry(
+        () => this.api.post('/api/v1/user/delete', {
+          user_ids: [profileId]
+        }),
+        2,
+        2000
+      );
+
+      // Очищаем кэши
+      this.profileCache.delete(profileId);
+      this.sessionCache.delete(profileId);
 
       if (response.data.code === 0) {
         logger.info(`Profile deleted successfully: ${profileId}`);
@@ -332,159 +702,252 @@ export class AdsPowerService {
       } else {
         throw new Error(`Failed to delete profile: ${response.data.msg}`);
       }
-    } catch (error) {
-      logger.error(`Failed to delete profile ${profileId}:`, error);
+      
+    } catch (error: any) {
+      logger.error(`Failed to delete profile ${profileId}:`, error.message);
       return false;
     }
   }
 
-  // Получение групп профилей
+  /**
+   * 📁 Получение групп профилей
+   */
   async getGroups(): Promise<Array<{ group_id: string; group_name: string }>> {
     try {
-      const response = await this.api.get('/api/v1/group/list');
+      const response = await RetryManager.executeWithRetry(
+        () => this.api.get('/api/v1/group/list'),
+        2,
+        1000
+      );
       
       if (response.data.code === 0) {
-        return response.data.data.list || [];
+        const groups = response.data.data.list || [];
+        logger.debug(`Retrieved ${groups.length} AdsPower groups`);
+        return groups;
       }
+      
       return [];
-    } catch (error) {
-      logger.error('Failed to get groups:', error);
+      
+    } catch (error: any) {
+      logger.error('Failed to get groups:', error.message);
       return [];
     }
   }
 
-  // Массовая остановка браузеров
+  /**
+   * ⏹️ Массовая остановка браузеров
+   */
   async stopAllBrowsers(): Promise<number> {
     try {
+      logger.info('Stopping all active browsers');
+      
       const profiles = await this.getAllProfiles();
       let stoppedCount = 0;
-
-      for (const profile of profiles) {
-        const status = await this.getBrowserStatus(profile.user_id);
-        if (status === 'Active') {
-          const stopped = await this.stopBrowser(profile.user_id);
-          if (stopped) stoppedCount++;
-        }
+      
+      // Останавливаем браузеры параллельно батчами по 5
+      const batchSize = 5;
+      for (let i = 0; i < profiles.length; i += batchSize) {
+        const batch = profiles.slice(i, i + batchSize);
+        
+        const stopPromises = batch.map(async (profile) => {
+          try {
+            const status = await this.getBrowserStatus(profile.user_id);
+            if (status === 'Active') {
+              const stopped = await this.stopBrowser(profile.user_id);
+              return stopped ? 1 : 0;
+            }
+            return 0;
+          } catch (error) {
+            logger.debug(`Failed to stop browser for profile ${profile.user_id}`);
+            return 0;
+          }
+        });
+        
+        const results = await Promise.allSettled(stopPromises);
+        stoppedCount += results
+          .filter(r => r.status === 'fulfilled')
+          .reduce((sum, r) => sum + (r as PromiseFulfilledResult<number>).value, 0);
       }
 
       logger.info(`Stopped ${stoppedCount} browsers`);
       return stoppedCount;
-    } catch (error) {
-      logger.error('Failed to stop all browsers:', error);
+      
+    } catch (error: any) {
+      logger.error('Failed to stop all browsers:', error.message);
       return 0;
     }
   }
 
-  // Тест подключения с детальной информацией
+  /**
+   * 🧪 Комплексный тест подключения
+   */
   async testConnection(): Promise<{
     connected: boolean;
     version?: string;
     profilesCount?: number;
     activeProfiles?: number;
+    healthScore?: number;
+    responseTime?: number;
     error?: string;
   }> {
+    const startTime = Date.now();
+    
     try {
       // Проверяем подключение
       const connected = await this.checkConnection();
       if (!connected) {
         return {
           connected: false,
-          error: 'Cannot connect to AdsPower. Make sure AdsPower is running.'
+          healthScore: this.connectionMonitor.getHealthScore(),
+          responseTime: Date.now() - startTime,
+          error: 'Cannot connect to AdsPower. Make sure AdsPower is running on ' + this.baseUrl
         };
       }
 
       // Получаем версию
       const version = await this.getVersion();
       
-      // Получаем профили
-      const profiles = await this.getAllProfiles();
+      // Получаем профили (ограничиваем для теста)
+      const profiles = await this.getAllProfiles(1, 50);
       const profilesCount = profiles.length;
 
-      // Считаем активные профили
+      // Считаем активные профили (проверяем только первые 10 для скорости)
       let activeProfiles = 0;
-      for (const profile of profiles.slice(0, 10)) { // Проверяем только первые 10
-        const status = await this.getBrowserStatus(profile.user_id);
-        if (status === 'Active') activeProfiles++;
+      const checkProfiles = profiles.slice(0, 10);
+      
+      if (checkProfiles.length > 0) {
+        const statusPromises = checkProfiles.map(profile => 
+          this.getBrowserStatus(profile.user_id).catch(() => 'Inactive')
+        );
+        
+        const statuses = await Promise.all(statusPromises);
+        activeProfiles = statuses.filter(status => status === 'Active').length;
       }
+
+      const responseTime = Date.now() - startTime;
+      
+      logger.info('AdsPower connection test completed successfully', {
+        version,
+        profilesCount,
+        activeProfiles,
+        responseTime,
+        healthScore: this.connectionMonitor.getHealthScore()
+      });
 
       return {
         connected: true,
         version,
         profilesCount,
-        activeProfiles
+        activeProfiles,
+        healthScore: this.connectionMonitor.getHealthScore(),
+        responseTime
       };
+      
     } catch (error: any) {
       return {
         connected: false,
+        healthScore: this.connectionMonitor.getHealthScore(),
+        responseTime: Date.now() - startTime,
         error: error.message
       };
     }
   }
 
-  // 🚀 АВТОМАТИЧЕСКОЕ СОЗДАНИЕ INSTAGRAM ПРОФИЛЕЙ
+  /**
+   * 🚀 Автоматическое создание Instagram профилей с оптимизацией
+   */
   async createInstagramProfile(instagramData: {
     login: string;
     password: string;
     profileName: string;
-  }): Promise<any> {
+  }): Promise<{ success: boolean; profileId: string; message: string }> {
     try {
-      const profileConfig = this.generateOptimalConfig(instagramData.profileName);
+      const profileConfig = this.generateInstagramOptimizedConfig(instagramData.profileName);
       
-      console.log('🎮 Создание AdsPower профиля для Instagram:', instagramData.login);
-      
-      const response = await axios.post(`${this.baseUrl}/api/v1/user/create`, {
-        user_proxy_config: {
-          proxy_type: "noproxy" // Начинаем без прокси
-        },
-        user_config: profileConfig,
-        group_name: "Instagram_Automation",
-        remark: `Создано автоматически для Instagram: ${instagramData.login}`
-      }, {
-        timeout: adsPowerConfig.timeout, // Используем timeout из конфига
-        headers: {
-          'Content-Type': 'application/json'
-        }
+      logger.info('Creating Instagram-optimized AdsPower profile', {
+        login: instagramData.login,
+        profileName: instagramData.profileName
       });
+      
+      const response = await RetryManager.executeWithRetry(
+        () => this.api.post('/api/v1/user/create', {
+          user_proxy_config: {
+            proxy_type: "noproxy" // Начинаем без прокси для стабильности
+          },
+          user_config: profileConfig,
+          group_name: "Instagram_Automation",
+          remark: `Instagram profile for ${instagramData.login} - Created by OrbitHub`
+        }),
+        2,
+        3000
+      );
 
       if (response.data.code === 0) {
         const profileId = response.data.data.id;
-        console.log('✅ AdsPower профиль создан:', profileId);
         
-        // Сохраняем данные Instagram в профиле
-        await this.saveInstagramCredentials(profileId, instagramData);
+        // Кэшируем созданный профиль
+        const profile: AdsPowerProfile = {
+          user_id: profileId,
+          user_name: profileConfig.name,
+          group_id: '0',
+          domain_name: 'instagram.com',
+          created_time: new Date().toISOString()
+        };
+        this.profileCache.set(profileId, profile);
+        
+        logger.info('Instagram AdsPower profile created successfully', {
+          profileId,
+          login: instagramData.login,
+          profileName: instagramData.profileName
+        });
         
         return {
           success: true,
           profileId: profileId,
-          profileName: instagramData.profileName,
           message: `Профиль AdsPower создан (ID: ${profileId})`
         };
       } else {
         throw new Error(`AdsPower API error: ${response.data.msg}`);
       }
+      
     } catch (error: any) {
-      console.error('❌ Ошибка создания AdsPower профиля:', error.message);
-      throw new Error(`Не удалось создать AdsPower профиль: ${error.message}`);
+      logger.error('Failed to create Instagram AdsPower profile:', {
+        error: error.message,
+        login: instagramData.login
+      });
+      throw new Error(`Не удалось создать AdsPower профиль: ${this.getErrorMessage(error)}`);
     }
   }
 
-  // Генерация оптимальной конфигурации для Instagram
-  private generateOptimalConfig(profileName: string) {
-    // Выбор Chrome версии (приоритет стабильности)
+  /**
+   * 🎨 Генерация Instagram-оптимизированной конфигурации
+   */
+  private generateInstagramOptimizedConfig(profileName: string) {
+    // Выбор стабильных версий Chrome для Instagram
     const chromeVersions = ['138.0.6887.54', '137.0.6864.110', '136.0.6803.90'];
     const selectedChrome = chromeVersions[Math.floor(Math.random() * chromeVersions.length)];
     
-    // Windows версии (70% Win10, 30% Win11)
-    const isWin11 = Math.random() < 0.3;
+    // Windows версии (больше Windows 10 для стабильности)
+    const isWin11 = Math.random() < 0.2; // 20% Windows 11
     const windowsVersion = isWin11 ? '11' : '10';
     
-    // WebGL конфигурация для Instagram
-    const webglVendors = [
-      'Google Inc. (AMD)',
-      'Google Inc. (Intel)',
-      'Google Inc. (Apple)'
+    // WebGL конфигурация оптимизированная для Instagram
+    const webglConfigs = [
+      {
+        vendor: 'Google Inc. (Intel)',
+        renderer: 'ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)'
+      },
+      {
+        vendor: 'Google Inc. (AMD)', 
+        renderer: 'ANGLE (AMD, AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0, D3D11)'
+      },
+      {
+        vendor: 'Google Inc. (NVIDIA)',
+        renderer: 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1060 Direct3D11 vs_5_0 ps_5_0, D3D11)'
+      }
     ];
-    const selectedVendor = webglVendors[Math.floor(Math.random() * webglVendors.length)];
+    
+    const selectedWebGL = webglConfigs[Math.floor(Math.random() * webglConfigs.length)];
     
     return {
       name: profileName,
@@ -500,7 +963,7 @@ export class AdsPowerService {
       sys_app_cate_id: 0,
       cate_id: 0,
       
-      // Браузер настройки (Chrome приоритет)
+      // Браузер настройки оптимизированные для Instagram
       browser_kernel_config: {
         version: selectedChrome,
         type: "chrome"
@@ -513,61 +976,107 @@ export class AdsPowerService {
         arch: "x64"
       },
       
-      // WebGL оптимизация для Instagram
+      // WebGL настройки для обхода детекции
       webgl_config: {
-        webgl_vendor: selectedVendor,
-        webgl_renderer: this.getWebGLRenderer(selectedVendor)
+        webgl_vendor: selectedWebGL.vendor,
+        webgl_renderer: selectedWebGL.renderer,
+        webgl_image: 0 // ОТКЛЮЧЕНО для Instagram безопасности
       },
       
-      // Canvas и WebGL Image ОТКЛЮЧЕНЫ для безопасности Instagram
+      // Canvas настройки для Instagram
       canvas_config: {
-        canvas_noise: 0,
-        canvas_image: 0
+        canvas_noise: 1, // Включаем шум
+        canvas_image: 0  // ОТКЛЮЧЕНО для безопасности
       },
       
-      // Отпечаток браузера
+      // Отпечаток браузера для Instagram
       fingerprint_config: {
-        hardware_noise: 1, // Включаем шум оборудования
+        hardware_noise: 1,
         client_rects_noise: 1,
-        webgl_image: 0 // ОТКЛЮЧЕНО для Instagram
+        webgl_image: 0, // ОТКЛЮЧЕНО
+        canvas_image: 0, // ОТКЛЮЧЕНО
+        audio_context: 1,
+        timezone: "Europe/Moscow",
+        language: ["ru-RU", "ru", "en-US", "en"],
+        geolocation: 0 // Отключаем геолокацию
       },
       
-      // User-Agent автогенерация
-      user_agent: this.generateUserAgent(selectedChrome, windowsVersion)
+      // User-Agent для Instagram
+      user_agent: this.generateInstagramUserAgent(selectedChrome, windowsVersion)
     };
   }
 
-  private getWebGLRenderer(vendor: string): string {
-    const renderers: { [key: string]: string[] } = {
-      'Google Inc. (AMD)': ['AMD Radeon RX 580', 'AMD Radeon RX 6600', 'AMD Radeon Pro 580'],
-      'Google Inc. (Intel)': ['Intel UHD Graphics 630', 'Intel Iris Xe Graphics', 'Intel HD Graphics 530'],
-      'Google Inc. (Apple)': ['Apple M1', 'Apple M2', 'Apple GPU']
-    };
-    
-    const availableRenderers = renderers[vendor] || renderers['Google Inc. (AMD)'];
-    return availableRenderers[Math.floor(Math.random() * availableRenderers.length)];
+  // Утилиты
+
+  private getRandomWebGLVendor(): string {
+    const vendors = [
+      'Google Inc. (Intel)',
+      'Google Inc. (AMD)', 
+      'Google Inc. (NVIDIA)'
+    ];
+    return vendors[Math.floor(Math.random() * vendors.length)];
   }
 
-  private generateUserAgent(chromeVersion: string, windowsVersion: string): string {
-    const winNT = windowsVersion === '11' ? '10.0' : '10.0'; // NT версии одинаковые
+  private getRandomWebGLRenderer(): string {
+    const renderers = [
+      'ANGLE (Intel, Intel(R) UHD Graphics 630)',
+      'ANGLE (AMD, AMD Radeon RX 580)',
+      'ANGLE (NVIDIA, NVIDIA GeForce GTX 1060)'
+    ];
+    return renderers[Math.floor(Math.random() * renderers.length)];
+  }
+
+  private generateInstagramUserAgent(chromeVersion: string, windowsVersion: string): string {
+    const winNT = windowsVersion === '11' ? '10.0' : '10.0';
     return `Mozilla/5.0 (Windows NT ${winNT}; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
   }
 
-  // Сохранение Instagram данных в профиле
-  private async saveInstagramCredentials(profileId: string, instagramData: {
-    login: string;
-    password: string;
-  }): Promise<void> {
-    try {
-      // Это можно расширить для сохранения данных в заметках профиля
-      console.log(`💾 Сохранение Instagram данных для профиля ${profileId}:`, instagramData.login);
-      
-      // В будущем здесь можно добавить обновление профиля с Instagram данными
-      // через API AdsPower для сохранения в заметках или кастомных полях
-      
-    } catch (error) {
-      console.error('⚠️ Предупреждение: не удалось сохранить Instagram данные:', error);
-      // Не бросаем ошибку, так как это не критично для создания профиля
+  private normalizeError(error: AxiosError): Error {
+    if (error.code === 'ECONNREFUSED') {
+      return new Error('AdsPower API недоступен. Убедитесь что AdsPower запущен.');
+    } else if (error.code === 'ETIMEDOUT') {
+      return new Error('Тайм-аут подключения к AdsPower API.');
+    } else if (error.response?.status === 500) {
+      return new Error('Внутренняя ошибка AdsPower API.');
+    } else if (error.response?.data?.msg) {
+      return new Error(error.response.data.msg);
+    } else {
+      return new Error(error.message || 'Неизвестная ошибка AdsPower API');
     }
+  }
+
+  private getErrorMessage(error: any): string {
+    if (error.response?.data?.msg) {
+      return error.response.data.msg;
+    } else if (error.message) {
+      return error.message;
+    } else {
+      return 'Неизвестная ошибка';
+    }
+  }
+
+  /**
+   * 📊 Получение статистики подключения
+   */
+  getConnectionStats() {
+    return this.connectionMonitor.getStatus();
+  }
+
+  /**
+   * 🧹 Очистка кэшей
+   */
+  clearCaches(): void {
+    this.profileCache.clear();
+    this.sessionCache.clear();
+    logger.debug('AdsPower caches cleared');
+  }
+
+  // Aliases для совместимости с существующим кодом
+  async stopProfile(profileId: string): Promise<boolean> {
+    return this.stopBrowser(profileId);
+  }
+
+  async startProfile(profileId: string): Promise<BrowserSession> {
+    return this.startBrowser(profileId);
   }
 } 

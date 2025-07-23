@@ -2,6 +2,8 @@ import express from 'express';
 import authRoutes from './auth';
 import accountRoutes from './accounts';
 import dashboardRoutes from './dashboard';
+import automationRoutes from './automation';
+import komboRoutes from './kombo';
 
 const router = express.Router();
 
@@ -9,6 +11,8 @@ const router = express.Router();
 router.use('/auth', authRoutes);
 router.use('/accounts', accountRoutes);
 router.use('/dashboard', dashboardRoutes);
+router.use('/automation', automationRoutes);
+router.use('/kombo', komboRoutes);
 
 // Здоровье API
 router.get('/health', (req, res) => {
@@ -31,6 +35,8 @@ router.get('/', (req, res) => {
       auth: '/api/auth',
       accounts: '/api/accounts',
       dashboard: '/api/dashboard',
+      automation: '/api/automation',
+      kombo: '/api/kombo',
       health: '/api/health'
     }
   });

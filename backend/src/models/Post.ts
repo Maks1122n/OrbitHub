@@ -263,4 +263,33 @@ PostSchema.statics.getPostsStats = function(userId?: string) {
   ]);
 };
 
+// Индексы для оптимизации поиска
+PostSchema.index({ createdBy: 1 });
+PostSchema.index({ accountId: 1 });
+PostSchema.index({ status: 1 });
+PostSchema.index({ scheduledAt: 1 });
+PostSchema.index({ publishedAt: -1 });
+PostSchema.index({ createdAt: -1 }); // Сортировка по дате создания
+PostSchema.index({ updatedAt: -1 }); // Сортировка по дате обновления
+
+// Составные индексы для часто используемых запросов
+PostSchema.index({ createdBy: 1, status: 1 }); // Посты пользователя по статусу
+PostSchema.index({ accountId: 1, status: 1 }); // Посты аккаунта по статусу
+PostSchema.index({ status: 1, scheduledAt: 1 }); // Запланированные посты по времени
+PostSchema.index({ accountId: 1, publishedAt: -1 }); // Опубликованные посты аккаунта
+
+// Индекс для медиа файлов
+PostSchema.index({ mediaType: 1 });
+PostSchema.index({ 'metadata.fileSize': 1 });
+
+// TTL индекс для автоматической очистки старых черновиков (удаляем через 90 дней)
+PostSchema.index({ createdAt: 1 }, { 
+  expireAfterSeconds: 90 * 24 * 60 * 60, // 90 дней
+  partialFilterExpression: { status: 'draft' }
+});
+
+// Индекс для поиска по попыткам публикации
+PostSchema.index({ 'attempts.count': 1 });
+PostSchema.index({ 'attempts.lastAttempt': -1 });
+
 export const Post = mongoose.model<IPost>('Post', PostSchema); 

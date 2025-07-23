@@ -8,7 +8,7 @@ const getApiBaseUrl = () => {
   }
   
   // Локальная разработка
-  return 'http://localhost:5000/api';
+  return 'http://localhost:8000/api';
 };
 
 const API_BASE_URL = getApiBaseUrl();

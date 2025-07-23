@@ -4,18 +4,21 @@
   "description": "Professional Instagram automation platform with AdsPower integration",
   "main": "index.js",
   "scripts": {
+    "build": "npm run install:all && npm run build:backend && npm run build:frontend",
+    "start": "node app.js",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",
     "dev:powershell": "powershell -Command \"Start-Process powershell -ArgumentList '-NoExit', '-Command', 'cd backend; npm run dev' -PassThru; Start-Process powershell -ArgumentList '-NoExit', '-Command', 'cd frontend; npm run dev'\"",
-    "build": "npm run install:backend && npm run build:backend && npm run install:frontend && npm run build:frontend",
     "install:backend": "cd backend && npm install",
     "install:frontend": "cd frontend && npm install",
-    "build:backend": "cd backend && npm run build",
-    "build:frontend": "cd frontend && npm run build",
-    "start": "cd backend && npm start",
+    "build:backend": "cd backend && npm install && npm run build",
+    "build:frontend": "cd frontend && npm install && npm run build",
     "install:all": "npm run install:backend && npm run install:frontend",
     "deploy:render": "npm run build",
+    "test:production": "npm run build && npm start",
+    "render:build": "npm run build",
+    "render:start": "node app.js",
     "docker:build": "docker-compose build",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
@@ -49,6 +52,12 @@
     "url": "https://github.com/your-username/orbithub/issues"
   },
   "homepage": "https://github.com/your-username/orbithub#readme",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "mongoose": "^7.5.0",
+    "dotenv": "^16.3.1"
+  },
   "devDependencies": {
     "concurrently": "^8.2.2"
   },
