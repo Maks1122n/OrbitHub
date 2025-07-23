@@ -25,10 +25,12 @@ import authRoutes from './routes/auth';
 import accountRoutes from './routes/accounts';
 import postRoutes from './routes/posts';
 import automationRoutes from './routes/automation';
+import dashboardRoutes from './routes/dashboard';
 import adsPowerRoutes from './routes/adspower';
 import proxyRoutes from './routes/proxy';
 import accountProxyRoutes from './routes/accountProxy';
 import komboRoutes from './routes/kombo';
+import logsRoutes from './routes/logs';
 
 const app = express();
 
@@ -65,6 +67,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/accounts', accountRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/automation', automationRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/logs', logsRoutes);
 app.use('/api/kombo', komboRoutes);
 app.use('/api/kombo-new', komboRoutes); // Новый KOMBO с Pupiter
 app.use('/api/proxy', proxyRoutes);
