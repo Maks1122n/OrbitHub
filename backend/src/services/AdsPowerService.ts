@@ -25,6 +25,7 @@ export interface BrowserSession {
   profileId: string;
   debugPort: number;
   status: string;
+  ws?: string; // WebSocket URL для InstagramService
 }
 
 export class AdsPowerService {
@@ -180,8 +181,11 @@ export class AdsPowerService {
     proxy?: any;
     userAgent?: string;
     username?: string;
+    login?: string; // Добавляем поддержку login
   }): Promise<{ success: boolean; profileId?: string; error?: string }> {
-    return this.createProfile(params);
+    // Убираем password из params если он есть
+    const { password, ...cleanParams } = params as any;
+    return this.createProfile(cleanParams);
   }
 
   // Запуск профиля
@@ -287,14 +291,16 @@ export class AdsPowerService {
   }
 
   // Получение статуса профиля
-  async getProfileStatus(profileId: string): Promise<{ success: boolean; status?: string; error?: string }> {
+  async getProfileStatus(profileId: string): Promise<{ success: boolean; status?: string; error?: string; isActive?: boolean }> {
     try {
       const response = await this.client.get(`/api/v1/browser/active?user_id=${profileId}`);
       
       if (response.status === 200 && response.data.code === 0) {
+        const status = response.data.data.status || 'inactive';
         return {
           success: true,
-          status: response.data.data.status || 'inactive'
+          status: status,
+          isActive: status === 'active'
         };
       } else {
         return {

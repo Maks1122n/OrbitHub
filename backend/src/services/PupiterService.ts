@@ -231,7 +231,8 @@ export class PupiterService extends EventEmitter {
       
       // Проверка AdsPower
       try {
-        checks.adspower = await this.adsPowerService.checkConnection();
+        const adsPowerResult = await this.adsPowerService.checkConnection();
+        checks.adspower = adsPowerResult.success;
         this.log(checks.adspower ? '✅ AdsPower доступен' : '⚠️ AdsPower недоступен', 
                 checks.adspower ? 'success' : 'warning');
       } catch (error) {
@@ -337,7 +338,10 @@ export class PupiterService extends EventEmitter {
     try {
       // Проверка AdsPower с retry
       diagnostics.adspower = await RetrySystem.executeWithRetry(
-        () => this.adsPowerService.checkConnection(),
+        async () => {
+          const result = await this.adsPowerService.checkConnection();
+          return result.success;
+        },
         2,
         1000,
         2,

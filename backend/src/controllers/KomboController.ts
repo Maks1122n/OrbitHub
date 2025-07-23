@@ -1066,10 +1066,10 @@ export class KomboController {
           1000
         );
         
-        diagnostics.services.adsPowerAvailable = testResult.connected;
-        diagnostics.services.adsPowerVersion = testResult.version || null;
-        diagnostics.services.adsPowerProfilesCount = testResult.profilesCount || 0;
-        diagnostics.healthChecks.adspower = testResult.connected;
+        diagnostics.services.adsPowerAvailable = testResult.success;
+        diagnostics.services.adsPowerVersion = (testResult as any).version || null;
+        diagnostics.services.adsPowerProfilesCount = (testResult as any).profilesCount || 0;
+        diagnostics.healthChecks.adspower = testResult.success;
       } catch (adsPowerError) {
         logger.error('AdsPower diagnostics failed:', adsPowerError);
         diagnostics.services.adsPowerAvailable = false;

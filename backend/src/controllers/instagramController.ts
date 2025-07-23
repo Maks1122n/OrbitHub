@@ -40,12 +40,20 @@ export class InstagramController {
       }
 
       // Запускаем браузер AdsPower
-      const session = await adsPowerService.startBrowser(account.adsPowerProfileId);
+      const sessionResult = await adsPowerService.startBrowser(account.adsPowerProfileId);
+      
+      if (!sessionResult.success || !sessionResult.data) {
+        res.status(500).json({
+          success: false,
+          error: sessionResult.error || 'Failed to start browser session'
+        });
+        return;
+      }
       
       try {
         // Пытаемся авторизоваться
         const loginResult = await instagramService.loginToInstagram(
-          session,
+          sessionResult.data,
           account.username,
           account.decryptPassword(),
           { saveSession: true, skipIfLoggedIn: true }
