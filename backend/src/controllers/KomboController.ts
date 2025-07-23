@@ -296,6 +296,59 @@ export class KomboController {
         logger.info(`✅ Новый Instagram аккаунт создан: ${login}`);
       }
 
+      // 🚀 АВТОМАТИЧЕСКОЕ СОЗДАНИЕ ADSPOWER ПРОФИЛЯ
+      let adsPowerCreated = false;
+      let adsPowerProfileId: string | undefined;
+      let adsPowerError: string | undefined;
+
+      try {
+        logger.info(`🚀 Автоматическое создание AdsPower профиля для ${account.username}`);
+        
+        const adsPowerService = new AdsPowerService();
+        
+        // Проверяем доступность AdsPower API
+        const isConnected = await adsPowerService.checkConnection();
+        if (isConnected) {
+          account.adsPowerStatus = 'creating';
+          await account.save();
+
+          // Создаем профиль с интеллектуальной конфигурацией
+          const result = await adsPowerService.createInstagramProfile({
+            login: account.username,
+            password: account.decryptPassword(), // Расшифровываем пароль
+            profileName: account.displayName || account.username
+          });
+
+          // Сохраняем данные AdsPower профиля в базу
+          account.adsPowerProfileId = result.profileId;
+          account.adsPowerStatus = 'created';
+          account.adsPowerLastSync = new Date();
+          account.status = 'active';
+          account.adsPowerError = undefined;
+          adsPowerProfileId = result.profileId;
+          adsPowerCreated = true;
+          
+          await account.save();
+          
+          logger.info(`✅ AdsPower профиль автоматически создан: ID ${result.profileId}`);
+        } else {
+          account.adsPowerStatus = 'error';
+          account.adsPowerError = 'AdsPower не запущен или недоступен на http://local.adspower.net:50325';
+          adsPowerError = account.adsPowerError;
+          await account.save();
+          
+          logger.warn(`⚠️ AdsPower недоступен для автоматического создания профиля: ${account.username}`);
+        }
+      } catch (error: any) {
+        // Сохраняем ошибку в базу но НЕ прерываем процесс
+        account.adsPowerStatus = 'error';
+        account.adsPowerError = error.message;
+        adsPowerError = error.message;
+        await account.save();
+        
+        logger.error(`❌ Ошибка автоматического создания AdsPower профиля для ${account.username}:`, error);
+      }
+
       res.json({
         success: true,
         message: existingAccount ? 'Данные Instagram обновлены' : 'Новый Instagram аккаунт создан',
@@ -308,7 +361,14 @@ export class KomboController {
           dropboxFolder: account.dropboxFolder,
           status: account.status,
           adsPowerStatus: account.adsPowerStatus,
+          adsPowerProfileId: adsPowerProfileId,
+          adsPowerError: adsPowerError,
           createdAt: account.createdAt
+        },
+        adsPowerResult: {
+          created: adsPowerCreated,
+          profileId: adsPowerProfileId,
+          error: adsPowerError
         }
       });
     } catch (error: any) {

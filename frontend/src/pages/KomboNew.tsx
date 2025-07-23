@@ -157,12 +157,25 @@ export default function KomboNew() {
     }
   };
 
-  // Сохранение данных Instagram
+  // Сохранение данных Instagram + Автоматическое создание AdsPower профиля
   const handleSaveInstagram = async () => {
     try {
       const response = await api.post('/kombo-new/instagram/save', instagramAccount);
       console.log('Instagram account saved:', response.data);
       setAccountSaved(true);
+      
+      // Проверяем результат автоматического создания AdsPower профиля
+      const { adsPowerResult } = response.data;
+      if (adsPowerResult) {
+        if (adsPowerResult.created) {
+          console.log('✅ AdsPower профиль автоматически создан:', adsPowerResult.profileId);
+          // Можно показать уведомление об успехе
+        } else if (adsPowerResult.error) {
+          console.warn('⚠️ AdsPower профиль не создан:', adsPowerResult.error);
+          // Можно показать предупреждение с возможностью создать вручную
+        }
+      }
+      
       loadUserAccounts(); // Обновляем список аккаунтов
     } catch (error) {
       console.error('Ошибка сохранения данных Instagram:', error);
