@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: orbithub
+    env: node
+    plan: starter
+    buildCommand: npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      - key: DROPBOX_ACCESS_TOKEN
+        sync: false
+      - key: ADSPOWER_HOST
+        value: http://local.adspower.net:50325
+      - key: MAX_POSTS_PER_DAY
+        value: 10
+      - key: MIN_DELAY_BETWEEN_POSTS
+        value: 3600
+      - key: MAX_DELAY_BETWEEN_POSTS
+        value: 7200
+    healthCheckPath: /health 

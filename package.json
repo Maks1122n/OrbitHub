@@ -1,0 +1,68 @@
+{
+  "name": "orbithub",
+  "version": "1.0.0",
+  "description": "Professional Instagram automation platform with AdsPower integration",
+  "main": "index.js",
+  "scripts": {
+    "build": "npm run install:all && npm run build:backend && npm run build:frontend",
+    "start": "node app.js",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:powershell": "powershell -Command \"Start-Process powershell -ArgumentList '-NoExit', '-Command', 'cd backend; npm run dev' -PassThru; Start-Process powershell -ArgumentList '-NoExit', '-Command', 'cd frontend; npm run dev'\"",
+    "install:backend": "cd backend && npm install",
+    "install:frontend": "cd frontend && npm install",
+    "build:backend": "cd backend && npm install && npm run build",
+    "build:frontend": "cd frontend && npm install && npm run build",
+    "install:all": "npm install && npm run install:backend && npm run install:frontend",
+    "deploy:render": "npm run build",
+    "test:production": "npm run build && npm start",
+    "render:build": "npm run build",
+    "render:start": "node app.js",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "clean": "rm -rf backend/node_modules frontend/node_modules backend/dist frontend/dist",
+    "validate": "npm run validate:backend && npm run validate:frontend",
+    "validate:backend": "cd backend && npm run build && npm test",
+    "validate:frontend": "cd frontend && npm run build && npm run lint",
+    "test": "npm run test:backend && npm run test:frontend",
+    "test:backend": "cd backend && npm test",
+    "test:frontend": "cd frontend && npm test"
+  },
+  "keywords": [
+    "instagram",
+    "automation",
+    "adspower",
+    "social-media",
+    "marketing",
+    "dropbox",
+    "node.js",
+    "react",
+    "typescript"
+  ],
+  "author": "OrbitHub Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/orbithub.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/orbithub/issues"
+  },
+  "homepage": "https://github.com/your-username/orbithub#readme",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "mongoose": "^7.5.0",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
