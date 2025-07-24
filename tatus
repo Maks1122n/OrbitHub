@@ -1,5 +1,0 @@
-[33mbf2032f[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m 🎯 OrbitHub -> Single Page App: брали навигацию, остался только полнофункциональный KomboNew на главной странице
-[33mf016527[m 🎉 ревратили OrbitHub в Single Page App - компактный интерфейс с табами для полной функциональности Instagram автоматизации
-[33m324f1a6[m ✨ OrbitHub превращен в Single Page App - птимизированный компактный layout
-[33m8fe087e[m Fix white screen issue - Fixed imports in KomboNew.tsx from @/ aliases to relative paths - App now loads correctly
-[33m2479fec[m 🎯 MAJOR REFACTOR: Simplified interface to focus only on KOMBO NEW - Removed all menu items except KOMBO (Pupiter) - Updated routing: main page now shows KomboNew component - Deleted unused routes and components - App now focuses exclusively on KOMBO NEW functionality - Ready for full KOMBO deployment ✅
